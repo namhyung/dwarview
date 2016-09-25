@@ -293,119 +293,139 @@ static void walk_die(Dwarf_Die *die, GtkTreeStore *store, GtkTreeIter *parent, i
 	walk_die(&next, store, parent, level);
 }
 
-static void add_contents(GtkBuilder *builder, char *filename)
-{
-	Dwarf_Off off = 0;
-	Dwarf_Off next;
-	size_t total, sz;
-	guint ctx;
+struct content_arg {
+	char *filename;
+	GtkBuilder *builder;
 	GtkTreeStore *main_store;
 	GtkTreeStore *attr_store;
 	GtkStatusbar *status;
-	Elf_Data *data;
+	guint status_ctx;
+	Dwarf_Off off;
+	size_t total_size;
 	char msgbuf[4096];
+};
 
-	main_store = GTK_TREE_STORE(gtk_builder_get_object(builder, "main_store"));
-	attr_store = GTK_TREE_STORE(gtk_builder_get_object(builder, "attr_store"));
-	status = GTK_STATUSBAR(gtk_builder_get_object(builder, "status"));
+static guint add_die_content(void *_arg)
+{
+	struct content_arg *arg = _arg;
+	GtkTreeStore *main_store = arg->main_store;
+	GtkTreeIter iter, func, vars, type, misc;
+	Dwarf_Off off = arg->off;
+	Dwarf_Off next;
+	Dwarf_Die die, child;
+	size_t sz;
 
-	ctx = gtk_statusbar_get_context_id(status, "default context");
+	if (dwarf_nextcu(dwarf, off, &next, &sz, NULL, NULL, NULL)) {
+		gtk_statusbar_pop(arg->status, arg->status_ctx);
+		g_snprintf(arg->msgbuf, sizeof(arg->msgbuf), "Opening %s ... Done!", arg->filename);
+		gtk_statusbar_push(arg->status, arg->status_ctx, arg->msgbuf);
+		return FALSE;
+	}
 
-	g_snprintf(msgbuf, sizeof(msgbuf), "Opening %s ...", filename);
-	gtk_statusbar_push(status, ctx, msgbuf);
+	if (dwarf_offdie(dwarf, off + sz, &die) == NULL) {
+		g_snprintf(arg->msgbuf, sizeof(arg->msgbuf), "Error: cannot find offset %lx for %s",
+			   off + sz, arg->filename);
+		gtk_statusbar_push(arg->status, arg->status_ctx, arg->msgbuf);
+		return FALSE;
+	}
 
-	data = get_elf_secdata(dwarf_getelf(dwarf), ".debug_info");
-	if (data)
-		total = data->d_size;
-	else
-		total = -1;  /* XXX */
+	gtk_tree_store_append(main_store, &iter, NULL);
+	gtk_tree_store_set(main_store, &iter, 0, off + sz,
+			   1, dwarview_tag_name(dwarf_tag(&die)),
+			   2, dwarf_diename(&die), -1);
 
-	while (dwarf_nextcu(dwarf, off, &next, &sz, NULL, NULL, NULL) == 0) {
-		GtkTreeIter iter, func, vars, type, misc;
-		Dwarf_Die die, child;
+	gtk_tree_store_append(main_store, &func, &iter);
+	gtk_tree_store_set(main_store, &func, 0, -1, 1, "meta", 2, "functions", -1);
+	gtk_tree_store_append(main_store, &vars, &iter);
+	gtk_tree_store_set(main_store, &vars, 0, -1, 1, "meta", 2, "variables", -1);
+	gtk_tree_store_append(main_store, &type, &iter);
+	gtk_tree_store_set(main_store, &type, 0, -1, 1, "meta", 2, "types", -1);
+	gtk_tree_store_append(main_store, &misc, &iter);
+	gtk_tree_store_set(main_store, &misc, 0, -1, 1, "meta", 2, "others", -1);
 
-		if (dwarf_offdie(dwarf, off + sz, &die) == NULL) {
-			printf("bug??\n");
+	arg->off = next;
+	if (dwarf_child(&die, &child) != 0)
+		return TRUE;
+
+	do {
+		GtkTreeIter *parent;
+
+		switch (dwarf_tag(&child)) {
+		case DW_TAG_subprogram:
+		case DW_TAG_inlined_subroutine:
+		case DW_TAG_entry_point:
+			parent = &func;
+			break;
+		case DW_TAG_base_type:
+		case DW_TAG_array_type:
+		case DW_TAG_class_type:
+		case DW_TAG_enumeration_type:
+		case DW_TAG_pointer_type:
+		case DW_TAG_reference_type:
+		case DW_TAG_string_type:
+		case DW_TAG_structure_type:
+		case DW_TAG_subroutine_type:
+		case DW_TAG_union_type:
+		case DW_TAG_set_type:
+		case DW_TAG_subrange_type:
+		case DW_TAG_const_type:
+		case DW_TAG_file_type:
+		case DW_TAG_packed_type:
+		case DW_TAG_thrown_type:
+		case DW_TAG_volatile_type:
+		case DW_TAG_restrict_type:
+		case DW_TAG_interface_type:
+		case DW_TAG_unspecified_type:
+		case DW_TAG_shared_type:
+		case DW_TAG_ptr_to_member_type:
+		case DW_TAG_rvalue_reference_type:
+		case DW_TAG_typedef:
+			parent = &type;
+			break;
+		case DW_TAG_variable:
+			parent = &vars;
+			break;
+		default:
+			parent = &misc;
 			break;
 		}
 
-		gtk_tree_store_append(main_store, &iter, NULL);
-		gtk_tree_store_set(main_store, &iter, 0, off + sz,
-				   1, dwarview_tag_name(dwarf_tag(&die)),
-				   2, dwarf_diename(&die), -1);
-
-		gtk_tree_store_append(main_store, &func, &iter);
-		gtk_tree_store_set(main_store, &func, 0, -1, 1, "meta", 2, "functions", -1);
-		gtk_tree_store_append(main_store, &vars, &iter);
-		gtk_tree_store_set(main_store, &vars, 0, -1, 1, "meta", 2, "variables", -1);
-		gtk_tree_store_append(main_store, &type, &iter);
-		gtk_tree_store_set(main_store, &type, 0, -1, 1, "meta", 2, "types", -1);
-		gtk_tree_store_append(main_store, &misc, &iter);
-		gtk_tree_store_set(main_store, &misc, 0, -1, 1, "meta", 2, "others", -1);
-
-		if (dwarf_child(&die, &child) != 0)
-			goto next;
-
-		do {
-			GtkTreeIter *parent;
-
-			switch (dwarf_tag(&child)) {
-			case DW_TAG_subprogram:
-			case DW_TAG_inlined_subroutine:
-			case DW_TAG_entry_point:
-				parent = &func;
-				break;
-			case DW_TAG_base_type:
-			case DW_TAG_array_type:
-			case DW_TAG_class_type:
-			case DW_TAG_enumeration_type:
-			case DW_TAG_pointer_type:
-			case DW_TAG_reference_type:
-			case DW_TAG_string_type:
-			case DW_TAG_structure_type:
-			case DW_TAG_subroutine_type:
-			case DW_TAG_union_type:
-			case DW_TAG_set_type:
-			case DW_TAG_subrange_type:
-			case DW_TAG_const_type:
-			case DW_TAG_file_type:
-			case DW_TAG_packed_type:
-			case DW_TAG_thrown_type:
-			case DW_TAG_volatile_type:
-			case DW_TAG_restrict_type:
-			case DW_TAG_interface_type:
-			case DW_TAG_unspecified_type:
-			case DW_TAG_shared_type:
-			case DW_TAG_ptr_to_member_type:
-			case DW_TAG_rvalue_reference_type:
-			case DW_TAG_typedef:
-				parent = &type;
-				break;
-			case DW_TAG_variable:
-			case DW_TAG_constant:
-				parent = &vars;
-				break;
-			default:
-				parent = &misc;
-				break;
-			}
-
-			g_snprintf(msgbuf, sizeof(msgbuf), "Opening %s ... (%lu/%lu)",
-				  filename, off, total);
-
-			gtk_statusbar_pop(status, ctx);
-			gtk_statusbar_push(status, ctx, msgbuf);
-			walk_die(&child, main_store, parent, 1);
-		}
-		while (dwarf_siblingof(&child, &child) == 0);
-
-next:
-		off = next;
+		gtk_statusbar_pop(arg->status, arg->status_ctx);
+		g_snprintf(arg->msgbuf, sizeof(arg->msgbuf), "Opening %s ... (%lu/%lu)",
+			   arg->filename, off, arg->total_size);
+		gtk_statusbar_push(arg->status, arg->status_ctx, arg->msgbuf);
+		walk_die(&child, main_store, parent, 1);
 	}
+	while (dwarf_siblingof(&child, &child) == 0);
 
-	g_snprintf(msgbuf, sizeof(msgbuf), "Opening %s ... Done!", filename);
-	gtk_statusbar_pop(status, ctx);
-	gtk_statusbar_push(status, ctx, msgbuf);
+	return TRUE;
+}
+
+static void add_contents(GtkBuilder *builder, char *filename)
+{
+	struct content_arg *arg;
+	Elf_Data *data;
+
+	arg = g_malloc(sizeof(*arg));
+	arg->builder = builder;
+	arg->filename = filename;
+
+	arg->main_store = GTK_TREE_STORE(gtk_builder_get_object(builder, "main_store"));
+	arg->attr_store = GTK_TREE_STORE(gtk_builder_get_object(builder, "attr_store"));
+	arg->status = GTK_STATUSBAR(gtk_builder_get_object(builder, "status"));
+
+	arg->status_ctx = gtk_statusbar_get_context_id(arg->status, "default context");
+
+	g_snprintf(arg->msgbuf, sizeof(arg->msgbuf), "Opening %s ...", filename);
+	gtk_statusbar_push(arg->status, arg->status_ctx, arg->msgbuf);
+
+	data = get_elf_secdata(dwarf_getelf(dwarf), ".debug_info");
+	if (data)
+		arg->total_size = data->d_size;
+	else
+		arg->total_size = -1;  /* XXX */
+
+	g_idle_add((GSourceFunc)add_die_content, arg);
 }
 
 static void show_warning(GtkWidget *parent, const char *fmt, ...)
