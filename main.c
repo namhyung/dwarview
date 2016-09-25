@@ -64,6 +64,29 @@ error:
 	return err;
 }
 
+static Elf_Data *get_elf_secdata(Elf *elf, char *sec_name)
+{
+	size_t i, num_sec, strndx;
+	Elf_Scn *sec;
+
+	elf_getshdrnum(elf, &num_sec);
+	elf_getshdrstrndx(elf, &strndx);
+
+	for (i = 0; i < num_sec; i++) {
+		char *name;
+		GElf_Shdr shdr;
+
+		sec = elf_getscn(elf, i);
+		gelf_getshdr(sec, &shdr);
+		name = elf_strptr(elf, strndx, shdr.sh_name);
+
+		if (!g_strcmp0(name, sec_name)) {
+			return elf_getdata(sec, NULL);
+		}
+	}
+	return NULL;
+}
+
 static char *print_block(Dwarf_Block *block)
 {
 	int i;
@@ -270,16 +293,32 @@ static void walk_die(Dwarf_Die *die, GtkTreeStore *store, GtkTreeIter *parent, i
 	walk_die(&next, store, parent, level);
 }
 
-static void add_contents(GtkBuilder *builder)
+static void add_contents(GtkBuilder *builder, char *filename)
 {
 	Dwarf_Off off = 0;
 	Dwarf_Off next;
-	size_t sz;
+	size_t total, sz;
+	guint ctx;
 	GtkTreeStore *main_store;
 	GtkTreeStore *attr_store;
+	GtkStatusbar *status;
+	Elf_Data *data;
+	char msgbuf[4096];
 
 	main_store = GTK_TREE_STORE(gtk_builder_get_object(builder, "main_store"));
 	attr_store = GTK_TREE_STORE(gtk_builder_get_object(builder, "attr_store"));
+	status = GTK_STATUSBAR(gtk_builder_get_object(builder, "status"));
+
+	ctx = gtk_statusbar_get_context_id(status, "default context");
+
+	g_snprintf(msgbuf, sizeof(msgbuf), "Opening %s ...", filename);
+	gtk_statusbar_push(status, ctx, msgbuf);
+
+	data = get_elf_secdata(dwarf_getelf(dwarf), ".debug_info");
+	if (data)
+		total = data->d_size;
+	else
+		total = -1;  /* XXX */
 
 	while (dwarf_nextcu(dwarf, off, &next, &sz, NULL, NULL, NULL) == 0) {
 		GtkTreeIter iter, func, vars, type, misc;
@@ -351,6 +390,11 @@ static void add_contents(GtkBuilder *builder)
 				break;
 			}
 
+			g_snprintf(msgbuf, sizeof(msgbuf), "Opening %s ... (%lu/%lu)",
+				  filename, off, total);
+
+			gtk_statusbar_pop(status, ctx);
+			gtk_statusbar_push(status, ctx, msgbuf);
 			walk_die(&child, main_store, parent, 1);
 		}
 		while (dwarf_siblingof(&child, &child) == 0);
@@ -358,6 +402,10 @@ static void add_contents(GtkBuilder *builder)
 next:
 		off = next;
 	}
+
+	g_snprintf(msgbuf, sizeof(msgbuf), "Opening %s ... Done!", filename);
+	gtk_statusbar_pop(status, ctx);
+	gtk_statusbar_push(status, ctx, msgbuf);
 }
 
 static void show_warning(GtkWidget *parent, const char *fmt, ...)
@@ -404,7 +452,7 @@ int main(int argc, char *argv[])
 			show_warning(window, "Error: %s: %s\n",
 				     argv[1], dwarf_errmsg(err));
 		else
-			add_contents(builder);
+			add_contents(builder, argv[1]);
 	}
 
 	g_object_unref(builder);

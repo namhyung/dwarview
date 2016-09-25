@@ -1,6 +1,7 @@
 #ifndef DWARVIEW_H
 #define DWARVIEW_H
 
+#include <gelf.h>
 #include <dwarf.h>
 #include <elfutils/libdw.h>
 #include <elfutils/libdwfl.h>
