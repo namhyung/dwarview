@@ -126,40 +126,35 @@ static char *print_file_name(Dwarf_Die *cudie, int idx)
 		return g_strdup_printf("Unknown file: %d\n", idx);
 }
 
-static char *get_srcline_from_offset(Dwarf_Off off)
+static char *die_location(Dwarf_Die *die)
 {
-	Dwarf_Die die;
 	gchar *file = NULL;
 	gint line = 0;
 
-	if (dwarf_offdie(dwarf, off, &die) == NULL)
-		goto out;
-
-	if (dwarf_hasattr(&die, DW_AT_decl_file) || dwarf_hasattr(&die, DW_AT_call_file)) {
+	if (dwarf_hasattr(die, DW_AT_decl_file) || dwarf_hasattr(die, DW_AT_call_file)) {
 		Dwarf_Die cudie;
 		Dwarf_Word file_idx;
 		Dwarf_Attribute attr;
 
-		dwarf_diecu(&die, &cudie, NULL, NULL);
+		dwarf_diecu(die, &cudie, NULL, NULL);
 
-		if (dwarf_attr(&die, DW_AT_decl_file, &attr) == NULL)
-			dwarf_attr(&die, DW_AT_call_file, &attr);
+		if (dwarf_attr(die, DW_AT_decl_file, &attr) == NULL)
+			dwarf_attr(die, DW_AT_call_file, &attr);
 
 		dwarf_formudata(&attr, &file_idx);
 		file = print_file_name(&cudie, file_idx);
 	}
-	if (dwarf_hasattr(&die, DW_AT_decl_line) || dwarf_hasattr(&die, DW_AT_call_line)) {
+	if (dwarf_hasattr(die, DW_AT_decl_line) || dwarf_hasattr(die, DW_AT_call_line)) {
 		Dwarf_Word lineno;
 		Dwarf_Attribute attr;
 
-		if (dwarf_attr(&die, DW_AT_decl_line, &attr) == NULL)
-			dwarf_attr(&die, DW_AT_call_line, &attr);
+		if (dwarf_attr(die, DW_AT_decl_line, &attr) == NULL)
+			dwarf_attr(die, DW_AT_call_line, &attr);
 
 		dwarf_formudata(&attr, &lineno);
 		line = lineno;
 	}
 
-out:
 	return g_strdup_printf(" in %s:%d", file ?: "(unknown)", line);
 }
 
@@ -322,6 +317,7 @@ static gboolean on_button_press(GtkWidget *widget, GdkEvent *event, gpointer dat
 struct search_status {
 	bool on_going;
 	bool try_var;
+	bool with_decl;
 	gint found;
 	guint ctx_id;
 	GList *curr;
@@ -332,6 +328,7 @@ struct search_status {
 	GtkButton *button;
 	GtkToggleButton *func;
 	GtkToggleButton *var;
+	GtkToggleButton *decl;
 	GtkTreeView *result;
 	GtkTreeView *main_view;
 	GtkStatusbar *status;
@@ -354,24 +351,31 @@ struct search_item {
 
 static void stop_search(struct search_status *search, const gchar *msg);
 
-static void do_search(struct search_status *search, struct search_item *item)
+static int do_search(struct search_status *search, struct search_item *item)
 {
 	GtkTreeStore *store = GTK_TREE_STORE(gtk_tree_view_get_model(search->result));
 	GtkTreeModel *main_model = gtk_tree_view_get_model(search->main_view);
 	GtkTreeIter iter, main_iter;
 	GValue val = G_VALUE_INIT;
 	Dwarf_Off off;
+	Dwarf_Die die;
 	gchar *location;
 
 	if (!g_pattern_match_string(search->patt, item->name))
-		return;
+		return 0;
 
 	gtk_tree_model_get_iter(main_model, &main_iter, item->path);
 	gtk_tree_model_get_value(main_model, &main_iter, 0, &val);
 	off = g_value_get_ulong(&val);
 	g_value_unset(&val);
 
-	location = get_srcline_from_offset(off);
+	if (dwarf_offdie(dwarf, off, &die) == NULL)
+		return -1;
+
+	if (dwarf_hasattr(&die, DW_AT_declaration) && !search->with_decl)
+		return 0;
+
+	location = die_location(&die);
 
 	gtk_tree_store_append(store, &iter, NULL);
 	gtk_tree_store_set(store, &iter, 0, item->name, 1, location, 2, item->path, -1);
@@ -383,6 +387,8 @@ static void do_search(struct search_status *search, struct search_item *item)
 
 	gtk_statusbar_pop(search->status, search->ctx_id);
 	gtk_statusbar_push(search->status, search->ctx_id, search->msgbuf);
+
+	return 0;
 }
 
 static guint search_handler(void *arg)
@@ -397,7 +403,14 @@ static guint search_handler(void *arg)
 	while (curr) {
 		struct search_item *item = curr->data;
 
-		do_search(search, item);
+		if (do_search(search, item) < 0) {
+			char tmp[1024];
+
+err:
+			g_snprintf(tmp, sizeof(tmp), "Failed (at %s).", item->name);
+			stop_search(search, tmp);
+			return FALSE;
+		}
 
 		curr = g_list_previous(curr);
 
@@ -413,7 +426,8 @@ static guint search_handler(void *arg)
 	while (curr) {
 		struct search_item *item = curr->data;
 
-		do_search(search, item);
+		if (do_search(search, item) < 0)
+			goto err;
 
 		curr = g_list_previous(curr);
 
@@ -455,6 +469,8 @@ static void start_search(struct search_status *search, const gchar *text)
 	}
 	else
 		search->curr = var_first;
+
+	search->with_decl = gtk_toggle_button_get_active(search->decl);
 
 	search->on_going = TRUE;
 	g_idle_add((GSourceFunc)search_handler, search);
@@ -540,6 +556,7 @@ static void setup_search_status(GtkBuilder *builder)
 	search->button = GTK_BUTTON(gtk_builder_get_object(builder, "search_btn"));
 	search->func = GTK_TOGGLE_BUTTON(gtk_builder_get_object(builder, "search_func"));
 	search->var = GTK_TOGGLE_BUTTON(gtk_builder_get_object(builder, "search_var"));
+	search->decl = GTK_TOGGLE_BUTTON(gtk_builder_get_object(builder, "search_decl"));
 	search->result = GTK_TREE_VIEW(gtk_builder_get_object(builder, "search_view"));
 	search->main_view = GTK_TREE_VIEW(gtk_builder_get_object(builder, "main_view"));
 
@@ -615,11 +632,16 @@ static void walk_die(Dwarf_Die *die, GtkTreeStore *store, GtkTreeIter *parent, i
 	Dwarf_Die next;
 	int tag = dwarf_tag(die);
 	const gchar *name = die_name(die);
+	gchar *markup = NULL;
+
+	if (dwarf_hasattr(die, DW_AT_declaration))
+		markup = g_strdup_printf("<span foreground=\"grey\">%s</span>", name);
 
 	gtk_tree_store_append(store, &iter, parent);
 	gtk_tree_store_set(store, &iter, 0, dwarf_dieoffset(die),
 			   1, dwarview_tag_name(tag),
-			   2, name, -1);
+			   2, markup ?: name, -1);
+	g_free(markup);
 
 	/* currently function and variable type can be searched */
 	switch (tag) {
