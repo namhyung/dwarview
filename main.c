@@ -126,6 +126,43 @@ static char *print_file_name(Dwarf_Die *cudie, int idx)
 		return g_strdup_printf("Unknown file: %d\n", idx);
 }
 
+static char *get_srcline_from_offset(Dwarf_Off off)
+{
+	Dwarf_Die die;
+	gchar *file = NULL;
+	gint line = 0;
+
+	if (dwarf_offdie(dwarf, off, &die) == NULL)
+		goto out;
+
+	if (dwarf_hasattr(&die, DW_AT_decl_file) || dwarf_hasattr(&die, DW_AT_call_file)) {
+		Dwarf_Die cudie;
+		Dwarf_Word file_idx;
+		Dwarf_Attribute attr;
+
+		dwarf_diecu(&die, &cudie, NULL, NULL);
+
+		if (dwarf_attr(&die, DW_AT_decl_file, &attr) == NULL)
+			dwarf_attr(&die, DW_AT_call_file, &attr);
+
+		dwarf_formudata(&attr, &file_idx);
+		file = print_file_name(&cudie, file_idx);
+	}
+	if (dwarf_hasattr(&die, DW_AT_decl_line) || dwarf_hasattr(&die, DW_AT_call_line)) {
+		Dwarf_Word lineno;
+		Dwarf_Attribute attr;
+
+		if (dwarf_attr(&die, DW_AT_decl_line, &attr) == NULL)
+			dwarf_attr(&die, DW_AT_call_line, &attr);
+
+		dwarf_formudata(&attr, &lineno);
+		line = lineno;
+	}
+
+out:
+	return g_strdup_printf(" in %s:%d", file ?: "(unknown)", line);
+}
+
 struct attr_arg {
 	GtkTreeStore *store;
 	Dwarf_Die cudie;
@@ -269,12 +306,251 @@ static gboolean on_button_press(GtkWidget *widget, GdkEvent *event, gpointer dat
 	return TRUE;
 }
 
+struct search_status {
+	bool on_going;
+	bool try_var;
+	gint found;
+	guint ctx_id;
+	GList *curr;
+	gchar *text;
+	GPatternSpec *patt;
+
+	GtkSearchEntry *entry;
+	GtkButton *button;
+	GtkToggleButton *func;
+	GtkToggleButton *var;
+	GtkTreeView *result;
+	GtkTreeView *main_view;
+	GtkStatusbar *status;
+
+	char msgbuf[4096];
+};
+
+static GList *func_list;
+static GList *func_first;
+static GList *var_list;
+static GList *var_first;
+
+struct search_item {
+	char *name;
+	GtkTreePath *path;
+};
+
+#define MAX_SEARCH_COUNT  1000
+
+
+static void stop_search(struct search_status *search, const gchar *msg);
+
+static void do_search(struct search_status *search, struct search_item *item)
+{
+	GtkTreeStore *store = GTK_TREE_STORE(gtk_tree_view_get_model(search->result));
+	GtkTreeModel *main_model = gtk_tree_view_get_model(search->main_view);
+	GtkTreeIter iter, main_iter;
+	GValue val = G_VALUE_INIT;
+	Dwarf_Off off;
+	gchar *location;
+
+	if (!g_pattern_match_string(search->patt, item->name))
+		return;
+
+	gtk_tree_model_get_iter(main_model, &main_iter, item->path);
+	gtk_tree_model_get_value(main_model, &main_iter, 0, &val);
+	off = g_value_get_ulong(&val);
+	g_value_unset(&val);
+
+	location = get_srcline_from_offset(off);
+
+	gtk_tree_store_append(store, &iter, NULL);
+	gtk_tree_store_set(store, &iter, 0, item->name, 1, location, 2, item->path, -1);
+	g_free(location);
+
+	search->found++;
+	g_snprintf(search->msgbuf, sizeof(search->msgbuf), "Searching '%s' ... (found %d)",
+		   search->text, search->found);
+
+	gtk_statusbar_pop(search->status, search->ctx_id);
+	gtk_statusbar_push(search->status, search->ctx_id, search->msgbuf);
+}
+
+static guint search_handler(void *arg)
+{
+	struct search_status *search = arg;
+	int count = 0;
+	GList *curr = search->curr;
+
+	if (!search->on_going)
+		return FALSE;
+
+	while (curr) {
+		struct search_item *item = curr->data;
+
+		do_search(search, item);
+
+		curr = g_list_previous(curr);
+
+		if (++count == MAX_SEARCH_COUNT)
+			goto out;
+	}
+
+	if (search->try_var) {
+		curr = var_first;
+		search->try_var = FALSE;
+	}
+
+	while (curr) {
+		struct search_item *item = curr->data;
+
+		do_search(search, item);
+
+		curr = g_list_previous(curr);
+
+		if (++count == MAX_SEARCH_COUNT)
+			break;
+	}
+
+out:
+	search->curr = curr;
+
+	if (curr == NULL) {
+		char tmp[1024];
+
+		g_snprintf(tmp, sizeof(tmp), "Done (%d found).", search->found);
+		stop_search(search, tmp);
+	}
+
+	return curr != NULL;
+}
+
+static void start_search(struct search_status *search, const gchar *text)
+{
+	/* delete previous result */
+	gtk_tree_store_clear(GTK_TREE_STORE(gtk_tree_view_get_model(search->result)));
+	search->found = 0;
+
+	g_free(search->text);
+	if (search->patt)
+		g_pattern_spec_free(search->patt);
+
+	search->text = g_strdup(text);
+	search->patt = g_pattern_spec_new(text);
+
+	search->try_var = FALSE;
+	if (gtk_toggle_button_get_active(search->func)) {
+		search->curr = func_first;
+		if (gtk_toggle_button_get_active(search->var))
+			search->try_var = TRUE;
+	}
+	else
+		search->curr = var_first;
+
+	search->on_going = TRUE;
+	g_idle_add((GSourceFunc)search_handler, search);
+}
+
+static void stop_search(struct search_status *search, const gchar *msg)
+{
+	search->on_going = FALSE;
+	g_object_set(search->entry, "editable", TRUE, NULL);
+	gtk_button_set_label(search->button, "Search");
+
+	g_snprintf(search->msgbuf, sizeof(search->msgbuf), "Searching '%s' ... %s",
+		   search->text, msg);
+
+	gtk_statusbar_pop(search->status, search->ctx_id);
+	gtk_statusbar_push(search->status, search->ctx_id, search->msgbuf);
+}
+
+static void on_search_activated(GtkEntry *entry, gpointer data)
+{
+	gtk_button_clicked(GTK_BUTTON(data));
+}
+
+static void on_search_button(GtkButton *button, gpointer data)
+{
+	struct search_status *search = data;
+	GtkEntry *entry = GTK_ENTRY(search->entry);
+	const gchar *text;
+
+	if (!search->on_going) {
+		/* at least one of the check boxes should be set */
+		if (!gtk_toggle_button_get_active(search->func) &&
+		    !gtk_toggle_button_get_active(search->var))
+			return;
+
+		text = gtk_entry_get_text(entry);
+		if (*text && g_strcmp0(text, search->text)) {
+			start_search(search, text);
+			g_object_set(entry, "editable", FALSE, NULL);
+			gtk_button_set_label(button, "Stop");
+		}
+	}
+	else {
+		stop_search(search, "Canceled");
+	}
+}
+
+static void on_search_result(GtkTreeView *view, GtkTreePath *path,
+			     GtkTreeViewColumn *col, gpointer data)
+{
+	GtkTreeView *main_view = data;
+	GtkTreeModel *model = gtk_tree_view_get_model(view);
+	GtkTreeIter iter;
+	GtkTreePath *main_path;
+	GValue val = G_VALUE_INIT;
+	gboolean expanded;
+
+	gtk_tree_model_get_iter(model, &iter, path);
+	gtk_tree_model_get_value(model, &iter, 2, &val);
+	main_path = g_value_get_pointer(&val);
+	g_value_unset(&val);
+
+	expanded = gtk_tree_view_row_expanded(main_view, main_path);
+
+	gtk_tree_view_expand_to_path(main_view, main_path);
+	gtk_tree_view_scroll_to_cell(main_view, main_path, NULL, TRUE, 0.5, 0);  /* center align */
+	gtk_tree_view_set_cursor(main_view, main_path, NULL, FALSE);
+	gtk_tree_view_row_activated(main_view, main_path, NULL);
+
+	/* do not change 'expanded' status */
+	if (!expanded)
+		gtk_tree_view_collapse_row(main_view, main_path);
+}
+
+static void setup_search_status(GtkBuilder *builder)
+{
+	struct search_status *search = g_malloc(sizeof(*search));
+
+	search->on_going = FALSE;
+	search->text = NULL;
+	search->patt = NULL;
+	search->entry = GTK_SEARCH_ENTRY(gtk_builder_get_object(builder, "search_entry"));
+	search->button = GTK_BUTTON(gtk_builder_get_object(builder, "search_btn"));
+	search->func = GTK_TOGGLE_BUTTON(gtk_builder_get_object(builder, "search_func"));
+	search->var = GTK_TOGGLE_BUTTON(gtk_builder_get_object(builder, "search_var"));
+	search->result = GTK_TREE_VIEW(gtk_builder_get_object(builder, "search_view"));
+	search->main_view = GTK_TREE_VIEW(gtk_builder_get_object(builder, "main_view"));
+
+	search->status = GTK_STATUSBAR(gtk_builder_get_object(builder, "status"));
+	search->ctx_id = gtk_statusbar_get_context_id(search->status, "search context");
+
+	g_snprintf(search->msgbuf, sizeof(search->msgbuf), "...");
+	gtk_statusbar_push(search->status, search->ctx_id, search->msgbuf);
+
+	g_signal_connect(G_OBJECT(search->button), "clicked", (GCallback)on_search_button, search);
+}
+
 static void add_gtk_callbacks(GtkBuilder *builder)
 {
 	gtk_builder_add_callback_symbol(builder, "on-row-activated",
 					G_CALLBACK(on_row_activated));
 	gtk_builder_add_callback_symbol(builder, "on-button-press",
 					G_CALLBACK(on_button_press));
+	gtk_builder_add_callback_symbol(builder, "on-search-activated",
+					G_CALLBACK(on_search_activated));
+	gtk_builder_add_callback_symbol(builder, "on-search-result",
+					G_CALLBACK(on_search_result));
+
+	setup_search_status(builder);
 }
 
 static const char *die_name(Dwarf_Die *die)
@@ -286,11 +562,47 @@ static void walk_die(Dwarf_Die *die, GtkTreeStore *store, GtkTreeIter *parent, i
 {
 	GtkTreeIter iter;
 	Dwarf_Die next;
+	int tag = dwarf_tag(die);
 
 	gtk_tree_store_append(store, &iter, parent);
 	gtk_tree_store_set(store, &iter, 0, dwarf_dieoffset(die),
-			   1, dwarview_tag_name(dwarf_tag(die)),
+			   1, dwarview_tag_name(tag),
 			   2, die_name(die), -1);
+
+	/* currently function and variable type can be searched */
+	switch (tag) {
+	case DW_TAG_subprogram:
+	case DW_TAG_inlined_subroutine:
+	case DW_TAG_entry_point:
+		if (dwarf_hasattr(die, DW_AT_name)) {
+			struct search_item *item = g_malloc(sizeof(*item));
+			bool is_first = (func_list == NULL);
+
+			item->name = g_strdup(die_name(die));
+			item->path = gtk_tree_model_get_path(GTK_TREE_MODEL(store), &iter);
+			func_list = g_list_prepend(func_list, item);
+
+			if (is_first)
+				func_first = func_list;
+		}
+		break;
+	case DW_TAG_variable:
+	case DW_TAG_constant:
+		if (dwarf_hasattr(die, DW_AT_name)) {
+			struct search_item *item = g_malloc(sizeof(*item));
+			bool is_first = (var_list == NULL);
+
+			item->name = g_strdup(die_name(die));
+			item->path = gtk_tree_model_get_path(GTK_TREE_MODEL(store), &iter);
+			var_list = g_list_prepend(var_list, item);
+
+			if (is_first)
+				var_first = var_list;
+		}
+		break;
+	default:
+		break;
+	}
 
 	if (dwarf_haschildren(die)) {
 		if (dwarf_child(die, &next)) {
