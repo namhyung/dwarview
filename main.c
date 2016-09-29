@@ -210,6 +210,10 @@ static int attr_callback(Dwarf_Attribute *attr, void *_arg)
 		raw_value = data;
 		if (name == DW_AT_decl_file || name == DW_AT_call_file)
 			val_str = print_file_name(&arg->cudie, raw_value);
+		else if (name == DW_AT_decl_line || name == DW_AT_call_line)
+			val_str = g_strdup_printf("Line %u", raw_value);
+		else if (name == DW_AT_inline)
+			val_str = g_strdup(dwarview_inline_name(raw_value));
 		else
 			val_str = g_strdup_printf("%#x", raw_value);
 		break;
@@ -234,7 +238,16 @@ static int attr_callback(Dwarf_Attribute *attr, void *_arg)
 	case DW_FORM_ref_udata:
 		dwarf_formref(attr, &off);
 		raw_value = off;
-		val_str = g_strdup_printf("%#x", raw_value);
+
+		/* adjust to CU-relative offset */
+		off += dwarf_dieoffset(&arg->cudie);
+		off -= dwarf_cuoffset(&arg->cudie);
+
+		dwarf_offdie(dwarf, off, &die);
+		if (dwarf_hasattr(&die, DW_AT_name))
+			val_str = g_strdup(dwarf_diename(&die));
+		else
+			val_str = g_strdup_printf("%#x", raw_value);
 		break;
 	case DW_FORM_ref_addr:
 	case DW_FORM_ref_sig8:
@@ -555,7 +568,45 @@ static void add_gtk_callbacks(GtkBuilder *builder)
 
 static const char *die_name(Dwarf_Die *die)
 {
-	return dwarf_hasattr(die, DW_AT_name) ? dwarf_diename(die) : "(no name)";
+	if (dwarf_hasattr(die, DW_AT_name))
+		return dwarf_diename(die);
+
+	if (dwarf_hasattr(die, DW_AT_abstract_origin)) {
+		Dwarf_Off off;
+		Dwarf_Die origin;
+		Dwarf_Attribute attr;
+
+		dwarf_attr(die, DW_AT_abstract_origin, &attr);
+
+		switch (dwarf_whatform(&attr)) {
+		case DW_FORM_ref1:
+		case DW_FORM_ref2:
+		case DW_FORM_ref4:
+		case DW_FORM_ref8:
+		case DW_FORM_ref_udata:
+			/* it's a CU-relative offset */
+			dwarf_formref(&attr, &off);
+
+			off += dwarf_dieoffset(die);
+			off -= dwarf_cuoffset(die);
+
+			dwarf_offdie(dwarf, off, &origin);
+			break;
+		case DW_FORM_ref_addr:
+		case DW_FORM_ref_sig8:
+		case DW_FORM_GNU_ref_alt:
+			dwarf_formref_die(&attr, &origin);
+			break;
+		default:
+			goto out;
+		}
+
+		if (dwarf_hasattr(&origin, DW_AT_name))
+			return dwarf_diename(&origin);
+	}
+
+out:
+	return "(no name)";
 }
 
 static void walk_die(Dwarf_Die *die, GtkTreeStore *store, GtkTreeIter *parent, int level)
@@ -563,22 +614,23 @@ static void walk_die(Dwarf_Die *die, GtkTreeStore *store, GtkTreeIter *parent, i
 	GtkTreeIter iter;
 	Dwarf_Die next;
 	int tag = dwarf_tag(die);
+	const gchar *name = die_name(die);
 
 	gtk_tree_store_append(store, &iter, parent);
 	gtk_tree_store_set(store, &iter, 0, dwarf_dieoffset(die),
 			   1, dwarview_tag_name(tag),
-			   2, die_name(die), -1);
+			   2, name, -1);
 
 	/* currently function and variable type can be searched */
 	switch (tag) {
 	case DW_TAG_subprogram:
 	case DW_TAG_inlined_subroutine:
 	case DW_TAG_entry_point:
-		if (dwarf_hasattr(die, DW_AT_name)) {
+		if (g_strcmp0(name, "(no name")) {
 			struct search_item *item = g_malloc(sizeof(*item));
 			bool is_first = (func_list == NULL);
 
-			item->name = g_strdup(die_name(die));
+			item->name = g_strdup(name);
 			item->path = gtk_tree_model_get_path(GTK_TREE_MODEL(store), &iter);
 			func_list = g_list_prepend(func_list, item);
 
@@ -588,11 +640,11 @@ static void walk_die(Dwarf_Die *die, GtkTreeStore *store, GtkTreeIter *parent, i
 		break;
 	case DW_TAG_variable:
 	case DW_TAG_constant:
-		if (dwarf_hasattr(die, DW_AT_name)) {
+		if (g_strcmp0(name, "(no name)")) {
 			struct search_item *item = g_malloc(sizeof(*item));
 			bool is_first = (var_list == NULL);
 
-			item->name = g_strdup(die_name(die));
+			item->name = g_strdup(name);
 			item->path = gtk_tree_model_get_path(GTK_TREE_MODEL(store), &iter);
 			var_list = g_list_prepend(var_list, item);
 

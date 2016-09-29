@@ -330,3 +330,32 @@ char *dwarview_form_name(unsigned int form)
 }
 
 #undef DWARF_FORM
+
+
+/* DWARF inline encodings. */
+struct inline_name {
+	unsigned code;
+	char *name;
+};
+
+#define DWARF_INLINE(_inl)  { DW_INL_##_inl, #_inl }
+
+static const struct inline_name inline_names[] = {
+	DWARF_INLINE(not_inlined),
+	DWARF_INLINE(inlined),
+	DWARF_INLINE(declared_not_inlined),
+	DWARF_INLINE(declared_inlined),
+};
+
+char *dwarview_inline_name(unsigned int code)
+{
+	unsigned i;
+
+	for (i = 0; i < ARRAY_SIZE(inline_names); i++)
+		if (inline_names[i].code == code)
+			return inline_names[i].name;
+
+	return "unknown";
+}
+
+#undef DWARF_INLINE
