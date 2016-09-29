@@ -21,6 +21,59 @@ static const Dwfl_Callbacks offline_callbacks = {
 
 static Dwarf *dwarf;
 
+static GtkBuilder *builder;
+
+struct content_arg {
+	char *filename;
+	GtkBuilder *builder;
+	GtkTreeStore *main_store;
+	GtkTreeStore *attr_store;
+	GtkStatusbar *status;
+	guint status_ctx;
+	Dwarf_Off off;
+	size_t total_size;
+	char msgbuf[4096];
+};
+
+static struct content_arg *arg;
+
+struct search_status {
+	bool on_going;
+	bool try_var;
+	bool with_decl;
+	gint found;
+	guint ctx_id;
+	GList *curr;
+	gchar *text;
+	GPatternSpec *patt;
+
+	GtkSearchEntry *entry;
+	GtkButton *button;
+	GtkToggleButton *func;
+	GtkToggleButton *var;
+	GtkToggleButton *decl;
+	GtkTreeView *result;
+	GtkTreeView *main_view;
+	GtkStatusbar *status;
+
+	char msgbuf[4096];
+};
+
+static struct search_status *search;
+
+static GList *func_list;
+static GList *func_first;
+static GList *var_list;
+static GList *var_first;
+
+struct search_item {
+	char *name;
+	GtkTreePath *path;
+};
+
+static void add_contents(GtkBuilder *builder, char *filename);
+static void destroy_item(gpointer data);
+
 /* Get a Dwarf from offline image */
 static int open_dwarf_file(char *path)
 {
@@ -32,7 +85,7 @@ static int open_dwarf_file(char *path)
 
 	fd = open(path, O_RDONLY);
 	if (fd < 0)
-		return -errno;
+		return errno;
 
 	dwfl = dwfl_begin(&offline_callbacks);
 	if (!dwfl)
@@ -62,6 +115,60 @@ error:
 	if (err == 0)
 		err = 6;  /* no DWARF information */
 	return err;
+}
+
+static void close_dwarf_file(void)
+{
+	dwarf_end(dwarf);
+
+	gtk_tree_store_clear(arg->main_store);
+	gtk_tree_store_clear(arg->attr_store);
+
+	gtk_tree_store_clear(GTK_TREE_STORE(gtk_tree_view_get_model(search->result)));
+
+	g_list_free_full(func_list, destroy_item);
+	g_list_free_full(var_list, destroy_item);
+	func_list = NULL;
+	var_list = NULL;
+
+	/* stop and re-enable search */
+	search->on_going = FALSE;
+	g_object_set(search->entry, "editable", TRUE, NULL);
+	gtk_button_set_label(search->button, "Search");
+
+	gtk_statusbar_pop(arg->status, arg->status_ctx);
+	gtk_statusbar_pop(search->status, search->ctx_id);
+
+	g_free(search->text);
+	search->text = NULL;
+	if (search->patt) {
+		g_pattern_spec_free(search->patt);
+		search->patt = NULL;
+	}
+
+	g_free(arg->filename);
+
+	g_free(arg);
+}
+
+static void show_warning(GtkWidget *parent, const char *fmt, ...)
+{
+	GtkWidget *dialog;
+	GtkDialogFlags flags = GTK_DIALOG_DESTROY_WITH_PARENT;
+	char *msg;
+	va_list ap;
+
+	va_start(ap, fmt);
+	msg = g_strdup_vprintf(fmt, ap);
+	va_end(ap);
+
+	dialog = gtk_message_dialog_new(GTK_WINDOW(parent), flags,
+					GTK_MESSAGE_ERROR, GTK_BUTTONS_CLOSE,
+					"%s", msg);
+
+	gtk_dialog_run(GTK_DIALOG(dialog));
+	gtk_widget_destroy(dialog);
+	g_free(msg);
 }
 
 static Elf_Data *get_elf_secdata(Elf *elf, char *sec_name)
@@ -314,38 +421,6 @@ static gboolean on_button_press(GtkWidget *widget, GdkEvent *event, gpointer dat
 	return TRUE;
 }
 
-struct search_status {
-	bool on_going;
-	bool try_var;
-	bool with_decl;
-	gint found;
-	guint ctx_id;
-	GList *curr;
-	gchar *text;
-	GPatternSpec *patt;
-
-	GtkSearchEntry *entry;
-	GtkButton *button;
-	GtkToggleButton *func;
-	GtkToggleButton *var;
-	GtkToggleButton *decl;
-	GtkTreeView *result;
-	GtkTreeView *main_view;
-	GtkStatusbar *status;
-
-	char msgbuf[4096];
-};
-
-static GList *func_list;
-static GList *func_first;
-static GList *var_list;
-static GList *var_first;
-
-struct search_item {
-	char *name;
-	GtkTreePath *path;
-};
-
 #define MAX_SEARCH_COUNT  1000
 
 
@@ -547,7 +622,7 @@ static void on_search_result(GtkTreeView *view, GtkTreePath *path,
 
 static void setup_search_status(GtkBuilder *builder)
 {
-	struct search_status *search = g_malloc(sizeof(*search));
+	search = g_malloc(sizeof(*search));
 
 	search->on_going = FALSE;
 	search->text = NULL;
@@ -569,8 +644,55 @@ static void setup_search_status(GtkBuilder *builder)
 	g_signal_connect(G_OBJECT(search->button), "clicked", (GCallback)on_search_button, search);
 }
 
+static void on_file_open(GtkMenuItem *menu, gpointer *window)
+{
+	int res;
+	gchar *filename;
+	GtkWidget *dialog;
+	GtkFileChooserAction action = GTK_FILE_CHOOSER_ACTION_OPEN;
+	GtkFileChooser *chooser;
+
+	if (dwarf != NULL)
+		return;
+
+	dialog = gtk_file_chooser_dialog_new("Open File", GTK_WINDOW(window), action,
+					      "_Cancel", GTK_RESPONSE_CANCEL,
+					      "_Open", GTK_RESPONSE_ACCEPT,
+					      NULL);
+
+	res = gtk_dialog_run (GTK_DIALOG (dialog));
+	if (res != GTK_RESPONSE_ACCEPT) {
+		gtk_widget_destroy (dialog);
+		return;
+	}
+
+	chooser = GTK_FILE_CHOOSER(dialog);
+	filename = gtk_file_chooser_get_filename(chooser);
+	gtk_widget_destroy (dialog);
+
+	res = open_dwarf_file(filename);
+	if (res != 0)
+		show_warning(GTK_WIDGET(window), "Error: %s: %s\n",
+			     filename, dwarf_errmsg(res));
+	else
+		add_contents(builder, filename);
+}
+
+static void on_file_close(GtkMenuItem *menu, gpointer *unused)
+{
+	if (dwarf == NULL)
+		return;
+
+	close_dwarf_file();
+	dwarf = NULL;
+}
+
 static void add_gtk_callbacks(GtkBuilder *builder)
 {
+	gtk_builder_add_callback_symbol(builder, "on-file-open",
+					G_CALLBACK(on_file_open));
+	gtk_builder_add_callback_symbol(builder, "on-file-close",
+					G_CALLBACK(on_file_close));
 	gtk_builder_add_callback_symbol(builder, "on-row-activated",
 					G_CALLBACK(on_row_activated));
 	gtk_builder_add_callback_symbol(builder, "on-button-press",
@@ -695,17 +817,14 @@ static void walk_die(Dwarf_Die *die, GtkTreeStore *store, GtkTreeIter *parent, i
 	walk_die(&next, store, parent, level);
 }
 
-struct content_arg {
-	char *filename;
-	GtkBuilder *builder;
-	GtkTreeStore *main_store;
-	GtkTreeStore *attr_store;
-	GtkStatusbar *status;
-	guint status_ctx;
-	Dwarf_Off off;
-	size_t total_size;
-	char msgbuf[4096];
-};
+static void destroy_item(gpointer data)
+{
+	struct search_item *item = data;
+
+	gtk_tree_path_free(item->path);
+	g_free(item->name);
+	g_free(item);
+}
 
 static guint add_die_content(void *_arg)
 {
@@ -805,12 +924,12 @@ static guint add_die_content(void *_arg)
 
 static void add_contents(GtkBuilder *builder, char *filename)
 {
-	struct content_arg *arg;
 	Elf_Data *data;
 
 	arg = g_malloc(sizeof(*arg));
 	arg->builder = builder;
 	arg->filename = filename;
+	arg->off = 0;
 
 	arg->main_store = GTK_TREE_STORE(gtk_builder_get_object(builder, "main_store"));
 	arg->attr_store = GTK_TREE_STORE(gtk_builder_get_object(builder, "attr_store"));
@@ -830,29 +949,8 @@ static void add_contents(GtkBuilder *builder, char *filename)
 	g_idle_add((GSourceFunc)add_die_content, arg);
 }
 
-static void show_warning(GtkWidget *parent, const char *fmt, ...)
-{
-	GtkWidget *dialog;
-	GtkDialogFlags flags = GTK_DIALOG_DESTROY_WITH_PARENT;
-	char *msg;
-	va_list ap;
-
-	va_start(ap, fmt);
-	msg = g_strdup_vprintf(fmt, ap);
-	va_end(ap);
-
-	dialog = gtk_message_dialog_new(GTK_WINDOW(parent), flags,
-					GTK_MESSAGE_ERROR, GTK_BUTTONS_CLOSE,
-					"%s", msg);
-
-	gtk_dialog_run(GTK_DIALOG(dialog));
-	gtk_widget_destroy(dialog);
-	g_free(msg);
-}
-
 int main(int argc, char *argv[])
 {
-	GtkBuilder *builder;
 	GtkWidget  *window;
 
 	gtk_init_check(&argc, &argv);
@@ -874,10 +972,8 @@ int main(int argc, char *argv[])
 			show_warning(window, "Error: %s: %s\n",
 				     argv[1], dwarf_errmsg(err));
 		else
-			add_contents(builder, argv[1]);
+			add_contents(builder, g_strdup(argv[1]));
 	}
-
-	g_object_unref(builder);
 
 	gtk_main();
 
