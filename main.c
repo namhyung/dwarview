@@ -103,9 +103,25 @@ static char *print_block(Dwarf_Block *block)
 static char *print_file_name(Dwarf_Die *cudie, int idx)
 {
 	Dwarf_Files *files;
+	const gchar *dir_prefix = NULL;
+	Dwarf_Word file_idx;
+	Dwarf_Attribute attr;
 
-	if (dwarf_getsrcfiles(cudie, &files, NULL) == 0)
-		return g_strdup(dwarf_filesrc(files, idx, NULL, NULL));
+	if (dwarf_attr(cudie, DW_AT_comp_dir, &attr))
+		dir_prefix = dwarf_formstring(&attr);
+
+	if (dwarf_getsrcfiles(cudie, &files, NULL) == 0) {
+		const gchar *short_name = NULL;
+		const gchar *full_path = dwarf_filesrc(files, idx, NULL, NULL);
+
+		if (g_str_has_prefix(full_path, dir_prefix)) {
+			short_name = full_path + strlen(dir_prefix);
+			while (*short_name == '/')
+				short_name++;
+		}
+
+		return g_strdup(short_name ?: full_path);
+	}
 	else
 		return g_strdup_printf("Unknown file: %d\n", idx);
 }
