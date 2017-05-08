@@ -284,6 +284,100 @@ static char *die_location(Dwarf_Die *die)
 	return g_strdup_printf(" in %s:%d", file ?: "(unknown)", line);
 }
 
+static char *type_name(Dwarf_Die *die, Dwarf_Die *cudie)
+{
+	char *type = NULL;
+	char *name = NULL;
+	int tag = dwarf_tag(die);
+	Dwarf_Off off;
+	Dwarf_Die ref;
+	Dwarf_Attribute attr;
+
+	if (dwarf_hasattr(die, DW_AT_name))
+		name = (char *)dwarf_diename(die);
+
+	switch (tag) {
+	case DW_TAG_structure_type:
+		type = "struct";
+		break;
+	case DW_TAG_union_type:
+		type = "union";
+		break;
+	case DW_TAG_enumeration_type:
+		type = "enum";
+		break;
+	case DW_TAG_class_type:
+		type = "class";
+		break;
+	case DW_TAG_interface_type:
+		type = "interface";
+		break;
+	case DW_TAG_subroutine_type:
+		type = "function";
+		break;
+	default:
+		break;
+	}
+
+	if (type || name)
+		return g_strdup_printf("%s%s%s", type ?: "",
+				       (type && name) ? " " : "", name ?: "");
+
+	if (!dwarf_hasattr(die, DW_AT_type))
+		return g_strdup_printf("unknown type");
+
+	dwarf_attr(die, DW_AT_type, &attr);
+
+	switch (dwarf_whatform(&attr)) {
+	case DW_FORM_ref1:
+	case DW_FORM_ref2:
+	case DW_FORM_ref4:
+	case DW_FORM_ref8:
+	case DW_FORM_ref_udata:
+		dwarf_formref(&attr, &off);
+
+		/* adjust to CU-relative offset */
+		off += dwarf_dieoffset(cudie);
+		off -= dwarf_cuoffset(cudie);
+
+		dwarf_offdie(dwarf, off, &ref);
+		name = type_name(&ref, cudie);
+		break;
+	default:
+		name = strdup("");
+		break;
+	}
+
+	switch (tag) {
+	case DW_TAG_const_type:
+		type = g_strdup_printf("const %s", name);
+		break;
+	case DW_TAG_volatile_type:
+		type = g_strdup_printf("volatile %s", name);
+		break;
+	case DW_TAG_restrict_type:
+		type = g_strdup_printf("restrict %s", name);
+		break;
+	case DW_TAG_pointer_type:
+	case DW_TAG_ptr_to_member_type:
+		type = g_strdup_printf("pointer to %s", name);
+		break;
+	case DW_TAG_reference_type:
+	case DW_TAG_rvalue_reference_type:
+		type = g_strdup_printf("reference to %s", name);
+		break;
+	case DW_TAG_array_type:
+		type = g_strdup_printf("array of %s", name);
+		break;
+	default:
+		type = strdup("unknown type");
+		break;
+	}
+
+	free(name);
+	return type;
+}
+
 struct attr_arg {
 	GtkTreeStore *store;
 	Dwarf_Die cudie;
@@ -367,6 +461,8 @@ static int attr_callback(Dwarf_Attribute *attr, void *_arg)
 		dwarf_offdie(dwarf, off, &die);
 		if (dwarf_hasattr(&die, DW_AT_name))
 			val_str = g_strdup(dwarf_diename(&die));
+		else if (name == DW_AT_type)
+			val_str = type_name(&die, &arg->cudie);
 		else
 			val_str = g_strdup_printf("%#x", raw_value);
 		break;
