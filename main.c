@@ -844,45 +844,23 @@ static const char *die_name(Dwarf_Die *die)
 	Dwarf_Die pos = *die;
 	Dwarf_Die origin;
 	Dwarf_Attribute attr;
+	const char *name;
+
+	name = dwarf_diename(&pos);
+	if (name)
+		return name;
 
 	while (true) {
-		if (dwarf_hasattr(&pos, DW_AT_name))
-			return dwarf_diename(&pos);
+		if (dwarf_attr(&pos, DW_AT_name, &attr))
+			return dwarf_formstring(&attr);
 
-		if (dwarf_hasattr(&pos, DW_AT_abstract_origin))
-			dwarf_attr(&pos, DW_AT_abstract_origin, &attr);
-		else if (dwarf_hasattr(&pos, DW_AT_specification))
-			dwarf_attr(&pos, DW_AT_specification, &attr);
-		else if (dwarf_hasattr(&pos, DW_AT_import))
-			dwarf_attr(&pos, DW_AT_import, &attr);
-		else
+		if (dwarf_attr(&pos, DW_AT_abstract_origin, &attr) == NULL &&
+		    dwarf_attr(&pos, DW_AT_specification, &attr) == NULL &&
+		    dwarf_attr(&pos, DW_AT_import, &attr) == NULL)
 			goto out;
 
-		switch (dwarf_whatform(&attr)) {
-		case DW_FORM_ref1:
-		case DW_FORM_ref2:
-		case DW_FORM_ref4:
-		case DW_FORM_ref8:
-		case DW_FORM_ref_udata:
-			/* it's a CU-relative offset */
-			if (dwarf_formref(&attr, &off) != 0)
-				goto out;
-
-			off += dwarf_dieoffset(&pos);
-			off -= dwarf_cuoffset(&pos);
-
-			if (dwarf_offdie(dwarf, off, &origin) == NULL)
-				goto out;
-			break;
-		case DW_FORM_ref_addr:
-		case DW_FORM_ref_sig8:
-		case DW_FORM_GNU_ref_alt:
-			if (dwarf_formref_die(&attr, &origin) == NULL)
-				goto out;
-			break;
-		default:
+		if (dwarf_formref_die(&attr, &origin) == NULL)
 			goto out;
-		}
 
 		pos = origin;
 	}
