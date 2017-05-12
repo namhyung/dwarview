@@ -468,27 +468,20 @@ static int attr_callback(Dwarf_Attribute *attr, void *_arg)
 	case DW_FORM_ref4:
 	case DW_FORM_ref8:
 	case DW_FORM_ref_udata:
-		dwarf_formref(attr, &off);
-		raw_value = off;
-
-		/* adjust to CU-relative offset */
-		off += dwarf_dieoffset(&arg->cudie);
-		off -= dwarf_cuoffset(&arg->cudie);
-
-		dwarf_offdie(dwarf, off, &die);
-		if (dwarf_hasattr(&die, DW_AT_name))
-			val_str = g_strdup(dwarf_diename(&die));
-		else if (name == DW_AT_type)
-			val_str = type_name(&die, &arg->cudie);
-		else
-			val_str = g_strdup_printf("%#x", raw_value);
-		break;
 	case DW_FORM_ref_addr:
 	case DW_FORM_ref_sig8:
 	case DW_FORM_GNU_ref_alt:
+		dwarf_formref(attr, &off);
+		raw_value = off;
+
 		dwarf_formref_die(attr, &die);
-		raw_value = dwarf_dieoffset(&die);
-		val_str = g_strdup(dwarf_diename(&die));
+
+		if (name == DW_AT_type)
+			val_str = type_name(&die, &arg->cudie);
+		else if (dwarf_diename(&die))
+			val_str = g_strdup(dwarf_diename(&die));
+		else
+			val_str = g_strdup_printf("%#lx", raw_value);
 		break;
 	}
 
