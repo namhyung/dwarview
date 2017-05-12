@@ -871,13 +871,15 @@ static void walk_die(Dwarf_Die *die, GtkTreeStore *store, GtkTreeIter *parent, i
 	const gchar *name = die_name(die);
 	gchar *markup = NULL;
 
-	if (dwarf_hasattr(die, DW_AT_declaration))
-		markup = g_strdup_printf("<span foreground=\"grey\">%s</span>", name);
+	if (dwarf_hasattr(die, DW_AT_declaration)) {
+		markup = g_strdup_printf("<span foreground=\"grey\">%s (decl)</span>",
+					 dwarview_tag_name(tag), -1);
+	}
 
 	gtk_tree_store_append(store, &iter, parent);
 	gtk_tree_store_set(store, &iter, 0, dwarf_dieoffset(die),
-			   1, dwarview_tag_name(tag),
-			   2, markup ?: name, -1);
+			   1, markup ?: dwarview_tag_name(tag),
+			   2, name, -1);
 	g_free(markup);
 
 	/* currently function and variable type can be searched */
