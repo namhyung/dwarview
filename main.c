@@ -338,7 +338,7 @@ static char *type_name(Dwarf_Die *die, Dwarf_Die *cudie)
 				       (type && name) ? " " : "", name ?: "");
 
 	if (!dwarf_hasattr(die, DW_AT_type))
-		return g_strdup_printf("unknown type");
+		return g_strdup_printf("no type");
 
 	dwarf_attr(die, DW_AT_type, &attr);
 
@@ -348,13 +348,10 @@ static char *type_name(Dwarf_Die *die, Dwarf_Die *cudie)
 	case DW_FORM_ref4:
 	case DW_FORM_ref8:
 	case DW_FORM_ref_udata:
-		dwarf_formref(&attr, &off);
-
-		/* adjust to CU-relative offset */
-		off += dwarf_dieoffset(cudie);
-		off -= dwarf_cuoffset(cudie);
-
-		dwarf_offdie(dwarf, off, &ref);
+	case DW_FORM_ref_addr:
+	case DW_FORM_ref_sig8:
+	case DW_FORM_GNU_ref_alt:
+		dwarf_formref_die(&attr, &ref);
 		name = type_name(&ref, cudie);
 		break;
 	default:
@@ -384,7 +381,7 @@ static char *type_name(Dwarf_Die *die, Dwarf_Die *cudie)
 		type = g_strdup_printf("array of %s", name);
 		break;
 	default:
-		type = strdup("unknown type");
+		type = g_strdup_printf("unknown type (%d)", tag);
 		break;
 	}
 
