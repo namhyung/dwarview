@@ -252,6 +252,20 @@ static char *print_file_name(Dwarf_Die *cudie, int idx)
 		return g_strdup_printf("Unknown file: %d\n", idx);
 }
 
+static char *print_addr_ranges(Dwarf_Die *die)
+{
+	ptrdiff_t offset = 0;
+	Dwarf_Addr base, start, end;
+	char *result = NULL;
+
+	while ((offset = dwarf_ranges(die, offset, &base, &start, &end)) > 0) {
+		result = g_strdup_printf("%s%s[%lx,%lx)", result ?: "",
+					 result ? ", " : "", start, end);
+	}
+
+	return result;
+}
+
 static char *die_location(Dwarf_Die *die)
 {
 	gchar *file = NULL;
@@ -381,6 +395,7 @@ static char *type_name(Dwarf_Die *die, Dwarf_Die *cudie)
 struct attr_arg {
 	GtkTreeStore *store;
 	Dwarf_Die cudie;
+	Dwarf_Die *diep;
 };
 
 static int attr_callback(Dwarf_Attribute *attr, void *_arg)
@@ -429,6 +444,8 @@ static int attr_callback(Dwarf_Attribute *attr, void *_arg)
 			val_str = g_strdup_printf("Line %u", raw_value);
 		else if (name == DW_AT_inline)
 			val_str = g_strdup(dwarview_inline_name(raw_value));
+		else if (name == DW_AT_ranges)
+			val_str = print_addr_ranges(arg->diep);
 		else
 			val_str = g_strdup_printf("%#x", raw_value);
 		break;
@@ -495,6 +512,7 @@ static void on_row_activated(GtkTreeView *view, GtkTreePath *path,
 	Dwarf_Off off;
 	Dwarf_Die die;
 	struct attr_arg arg = {
+		.diep = &die,
 		.store = GTK_TREE_STORE(attr_model),
 	};
 
