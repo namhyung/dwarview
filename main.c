@@ -887,7 +887,7 @@ static void walk_die(Dwarf_Die *die, GtkTreeStore *store, GtkTreeIter *parent, i
 	case DW_TAG_subprogram:
 	case DW_TAG_inlined_subroutine:
 	case DW_TAG_entry_point:
-		if (g_strcmp0(name, "(no name")) {
+		if (g_strcmp0(name, "(no name)")) {
 			struct search_item *item = g_malloc(sizeof(*item));
 			bool is_first = (func_list == NULL);
 
@@ -919,7 +919,7 @@ static void walk_die(Dwarf_Die *die, GtkTreeStore *store, GtkTreeIter *parent, i
 
 	if (dwarf_haschildren(die)) {
 		if (dwarf_child(die, &next)) {
-			printf("buf?\n");
+			printf("bug?\n");
 			return;
 		}
 		walk_die(&next, store, &iter, level+1);
