@@ -226,17 +226,20 @@ static char *print_block(Dwarf_Block *block)
 	return result;
 }
 
-static char *print_file_name(Dwarf_Die *cudie, int idx)
+static char *print_file_name(Dwarf_Die *die, int idx)
 {
 	Dwarf_Files *files;
 	const gchar *dir_prefix = NULL;
 	Dwarf_Word file_idx;
 	Dwarf_Attribute attr;
+	Dwarf_Die cudie;
 
-	if (dwarf_attr(cudie, DW_AT_comp_dir, &attr))
+	dwarf_diecu(die, &cudie, NULL, NULL);
+
+	if (dwarf_attr(&cudie, DW_AT_comp_dir, &attr))
 		dir_prefix = dwarf_formstring(&attr);
 
-	if (dwarf_getsrcfiles(cudie, &files, NULL) == 0) {
+	if (dwarf_getsrcfiles(&cudie, &files, NULL) == 0) {
 		const gchar *short_name = NULL;
 		const gchar *full_path = dwarf_filesrc(files, idx, NULL, NULL);
 
@@ -298,7 +301,7 @@ static char *die_location(Dwarf_Die *die)
 	return g_strdup_printf(" in %s:%d", file ?: "(unknown)", line);
 }
 
-static char *type_name(Dwarf_Die *die, Dwarf_Die *cudie)
+static char *type_name(Dwarf_Die *die)
 {
 	char *type = NULL;
 	char *name = NULL;
@@ -352,7 +355,7 @@ static char *type_name(Dwarf_Die *die, Dwarf_Die *cudie)
 	case DW_FORM_ref_sig8:
 	case DW_FORM_GNU_ref_alt:
 		dwarf_formref_die(&attr, &ref);
-		name = type_name(&ref, cudie);
+		name = type_name(&ref);
 		break;
 	default:
 		name = strdup("");
@@ -391,7 +394,6 @@ static char *type_name(Dwarf_Die *die, Dwarf_Die *cudie)
 
 struct attr_arg {
 	GtkTreeStore *store;
-	Dwarf_Die cudie;
 	Dwarf_Die *diep;
 };
 
@@ -436,7 +438,7 @@ static int attr_callback(Dwarf_Attribute *attr, void *_arg)
 		dwarf_formudata(attr, &data);
 		raw_value = data;
 		if (name == DW_AT_decl_file || name == DW_AT_call_file)
-			val_str = print_file_name(&arg->cudie, raw_value);
+			val_str = print_file_name(arg->diep, raw_value);
 		else if (name == DW_AT_decl_line || name == DW_AT_call_line)
 			val_str = g_strdup_printf("Line %u", raw_value);
 		else if (name == DW_AT_inline)
@@ -474,7 +476,7 @@ static int attr_callback(Dwarf_Attribute *attr, void *_arg)
 		dwarf_formref_die(attr, &die);
 
 		if (name == DW_AT_type)
-			val_str = type_name(&die, &arg->cudie);
+			val_str = type_name(&die);
 		else if (dwarf_diename(&die))
 			val_str = g_strdup(dwarf_diename(&die));
 		else
@@ -517,7 +519,6 @@ static void on_row_activated(GtkTreeView *view, GtkTreePath *path,
 		return;
 	}
 
-	dwarf_diecu(&die, &arg.cudie, NULL, NULL);
 	gtk_tree_store_clear(arg.store);
 	dwarf_getattrs(&die, attr_callback, &arg, 0);
 }
