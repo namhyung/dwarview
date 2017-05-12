@@ -823,47 +823,49 @@ static void add_gtk_callbacks(GtkBuilder *builder)
 static const char *die_name(Dwarf_Die *die)
 {
 	Dwarf_Off off;
+	Dwarf_Die pos = *die;
 	Dwarf_Die origin;
 	Dwarf_Attribute attr;
 
-	if (dwarf_hasattr(die, DW_AT_name))
-		return dwarf_diename(die);
+	while (true) {
+		if (dwarf_hasattr(&pos, DW_AT_name))
+			return dwarf_diename(&pos);
 
-	if (dwarf_hasattr(die, DW_AT_abstract_origin))
-		dwarf_attr(die, DW_AT_abstract_origin, &attr);
-	else if (dwarf_hasattr(die, DW_AT_specification))
-		dwarf_attr(die, DW_AT_specification, &attr);
-	else
-		goto out;
-
-	switch (dwarf_whatform(&attr)) {
-	case DW_FORM_ref1:
-	case DW_FORM_ref2:
-	case DW_FORM_ref4:
-	case DW_FORM_ref8:
-	case DW_FORM_ref_udata:
-		/* it's a CU-relative offset */
-		dwarf_formref(&attr, &off);
-
-		off += dwarf_dieoffset(die);
-		off -= dwarf_cuoffset(die);
-
-		if (dwarf_offdie(dwarf, off, &origin) == NULL)
+		if (dwarf_hasattr(&pos, DW_AT_abstract_origin))
+			dwarf_attr(&pos, DW_AT_abstract_origin, &attr);
+		else if (dwarf_hasattr(&pos, DW_AT_specification))
+			dwarf_attr(&pos, DW_AT_specification, &attr);
+		else
 			goto out;
-		break;
-	case DW_FORM_ref_addr:
-	case DW_FORM_ref_sig8:
-	case DW_FORM_GNU_ref_alt:
-		if (dwarf_formref_die(&attr, &origin) < 0)
+
+		switch (dwarf_whatform(&attr)) {
+		case DW_FORM_ref1:
+		case DW_FORM_ref2:
+		case DW_FORM_ref4:
+		case DW_FORM_ref8:
+		case DW_FORM_ref_udata:
+			/* it's a CU-relative offset */
+			if (dwarf_formref(&attr, &off) != 0)
+				goto out;
+
+			off += dwarf_dieoffset(&pos);
+			off -= dwarf_cuoffset(&pos);
+
+			if (dwarf_offdie(dwarf, off, &origin) == NULL)
+				goto out;
+			break;
+		case DW_FORM_ref_addr:
+		case DW_FORM_ref_sig8:
+		case DW_FORM_GNU_ref_alt:
+			if (dwarf_formref_die(&attr, &origin) == NULL)
+				goto out;
+			break;
+		default:
 			goto out;
-		break;
-	default:
-		goto out;
+		}
+
+		pos = origin;
 	}
-
-	if (dwarf_hasattr(&origin, DW_AT_name))
-		return dwarf_diename(&origin);
-
 out:
 	return "(no name)";
 }
