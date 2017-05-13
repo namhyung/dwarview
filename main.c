@@ -1070,11 +1070,15 @@ static void add_contents(GtkBuilder *builder, char *filename)
 int main(int argc, char *argv[])
 {
 	GtkWidget  *window;
+	GError *error;
 
 	gtk_init_check(&argc, &argv);
 
 	builder = gtk_builder_new();
-	gtk_builder_add_from_file(builder, "dwarview.glade", NULL);
+	if (gtk_builder_add_from_file(builder, "dwarview.glade", &error) == 0) {
+		g_error("%s", error->message);
+		return 1;
+	}
 
 	window = GTK_WIDGET(gtk_builder_get_object(builder, "root_window"));
 	gtk_widget_show(window);
