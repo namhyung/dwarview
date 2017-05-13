@@ -6,7 +6,7 @@ CFLAGS += -g -Wno-deprecated-declarations
 
 all: dwarview
 
-dwarview: main.c dwarview.c
+dwarview: main.c dwarview.c demangle.c
 	gcc -o $@ $(CFLAGS) $^ $(LDFLAGS)
 
 clean:

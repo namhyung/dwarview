@@ -93,6 +93,11 @@ struct search_item {
 static void add_contents(GtkBuilder *builder, char *filename);
 static void destroy_item(gpointer data);
 
+extern void setup_demangler(void);
+extern void finish_demangler(void);
+extern bool demangler_enabled(void);
+extern int demangle(const char *input, char *output, int outlen);
+
 /* Get a Dwarf from offline image */
 static int open_dwarf_file(char *path)
 {
@@ -836,14 +841,16 @@ static const char *die_name(Dwarf_Die *die)
 	Dwarf_Die origin;
 	Dwarf_Attribute attr;
 	const char *name;
-
-	name = dwarf_diename(&pos);
-	if (name)
-		return name;
+	static char buf[4096];
 
 	while (true) {
 		if (dwarf_attr(&pos, DW_AT_name, &attr))
 			return dwarf_formstring(&attr);
+		/* use linkage name only if it can demangle the name */
+		if (dwarf_attr(&pos, DW_AT_linkage_name, &attr) && demangler_enabled()) {
+			demangle(dwarf_formstring(&attr), buf, sizeof(buf));
+			return buf;
+		}
 
 		if (dwarf_attr(&pos, DW_AT_abstract_origin, &attr) == NULL &&
 		    dwarf_attr(&pos, DW_AT_specification, &attr) == NULL &&
@@ -1080,6 +1087,8 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
+	setup_demangler();
+
 	window = GTK_WIDGET(gtk_builder_get_object(builder, "root_window"));
 	gtk_widget_show(window);
 
@@ -1098,6 +1107,8 @@ int main(int argc, char *argv[])
 	}
 
 	gtk_main();
+
+	finish_demangler();
 
 	return 0;
 }
