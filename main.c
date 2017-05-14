@@ -450,6 +450,8 @@ static int attr_callback(Dwarf_Attribute *attr, void *_arg)
 			val_str = g_strdup(dwarview_inline_name(raw_value));
 		else if (name == DW_AT_ranges)
 			val_str = print_addr_ranges(arg->diep);
+		else if (name == DW_AT_language)
+			val_str = g_strdup(dwarview_language_name(raw_value));
 		else
 			val_str = g_strdup_printf("%#x", raw_value);
 		break;

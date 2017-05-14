@@ -378,3 +378,54 @@ char *dwarview_inline_name(unsigned int code)
 }
 
 #undef DWARF_INLINE
+
+/* DWARF language encodings. */
+struct lang_name {
+	unsigned code;
+	char *name;
+};
+
+#define DWARF_LANGUAGE(_lang)  { DW_LANG_##_lang, #_lang }
+#define DWARF_LANG_Cpp(pre_, _year, name)  { DW_LANG_##pre_##C_plus_plus##_year, name }
+
+static const struct lang_name language_names[] = {
+	DWARF_LANGUAGE(C89),
+	DWARF_LANGUAGE(C),
+	DWARF_LANGUAGE(Ada83),
+	DWARF_LANG_Cpp( , , "C++"),
+	DWARF_LANGUAGE(Cobol74),
+	DWARF_LANGUAGE(Cobol85),
+	DWARF_LANGUAGE(Fortran77),
+	DWARF_LANGUAGE(Fortran90),
+	DWARF_LANGUAGE(Pascal83),
+	DWARF_LANGUAGE(Modula2),
+	DWARF_LANGUAGE(Java),
+	DWARF_LANGUAGE(C99),
+	DWARF_LANGUAGE(Ada95),
+	DWARF_LANGUAGE(Fortran95),
+	DWARF_LANGUAGE(PLI),
+	DWARF_LANGUAGE(ObjC),
+	DWARF_LANG_Cpp(Obj, , "ObjC++"),
+	DWARF_LANGUAGE(UPC),
+	DWARF_LANGUAGE(D),
+	DWARF_LANGUAGE(Python),
+	DWARF_LANGUAGE(Go),
+	DWARF_LANGUAGE(Haskell),
+	DWARF_LANG_Cpp( , _11, "C++11"),
+	DWARF_LANGUAGE(C11),
+	DWARF_LANG_Cpp( , _14, "C++14"),
+};
+
+char *dwarview_language_name(unsigned int code)
+{
+	unsigned i;
+
+	for (i = 0; i < ARRAY_SIZE(language_names); i++)
+		if (language_names[i].code == code)
+			return language_names[i].name;
+
+	return "unknown";
+}
+
+#undef DWARF_LANGUAGE
+#undef DWARF_LANG_Cpp
