@@ -231,6 +231,136 @@ static char *print_block(Dwarf_Block *block)
 	return result;
 }
 
+long read_sleb128(unsigned char *data, int *nbytes)
+{
+	int n = 1;
+	long val = *data & 0x7f;
+
+	while (*data & 0x80) {
+		data++;
+
+		val |= ((unsigned long)(*data & 0x7f) << (7 * n));
+		n++;
+	}
+
+	if (val & (1UL << (7 * n - 1)))
+		val |= (-1UL << (7 * n));  /* sign extension */
+
+	*nbytes = n;
+	return val;
+}
+
+static const char *get_regname(int regno)
+{
+	static char buf[32];
+	static const char *gp_regs[] = {
+		"rax", "rdx", "rcx", "rbx", "rsi", "rdi", "rbp", "rsp",
+	};
+	const char *reg = buf;
+
+	switch (regno) {
+	case 0 ... 7:
+		reg = gp_regs[regno];
+		break;
+	case 8 ... 15:
+		snprintf(buf, sizeof(buf), "r%d", regno);
+		break;
+	case 16:
+		reg = "RA";  /* return address ??? */
+		break;
+	case 17 ... 32:
+		snprintf(buf, sizeof(buf), "xmm%d", regno - 17);
+		break;
+	case 33 ... 40:
+		snprintf(buf, sizeof(buf), "st%d", regno - 33);
+		break;
+	case 41 ... 48:
+		snprintf(buf, sizeof(buf), "mm%d", regno - 41);
+		break;
+	default:
+		reg = "unknown";
+		break;
+	}
+
+	return reg;
+}
+
+static char *print_exprloc(Dwarf_Block *block)
+{
+	int i, n, k;
+	int len = block->length;
+	int pos = 0;
+	int size = 4096;
+	char *result = g_malloc(size);
+	long sarg;
+	unsigned long uarg;
+
+	for (i = 0; i < len; i++) {
+		switch (block->data[i]) {
+		case 0x03:
+			memcpy(&uarg, block->data + i + 1, sizeof(uarg));
+			pos += snprintf(result + pos, size - pos, "03 ");
+			for (k = 0; k < sizeof(uarg); k++)
+				pos += snprintf(result + pos, size - pos,
+						"%02x ", block->data[i + k + 1]);
+			pos += snprintf(result + pos, size - pos,
+					"(addr %#lx) ", uarg);
+			i += sizeof(uarg);
+			break;
+		case 0x06:
+			pos += snprintf(result + pos, size - pos,
+					"06 (deref) ");
+			break;
+		case 0x30 ... 0x4f:
+			pos += snprintf(result + pos, size - pos,
+					"%02x (literal %d) ", block->data[i],
+					block->data[i] - 0x30);
+			break;
+		case 0x50 ... 0x6f:
+			pos += snprintf(result + pos, size - pos,
+					"%02x (reg%d: %s) ", block->data[i],
+					block->data[i] - 0x50,
+					get_regname(block->data[i] - 0x50));
+			break;
+		case 0x70 ... 0x8f:
+			sarg = read_sleb128(block->data + i + 1, &n);
+			pos += snprintf(result + pos, size - pos,
+					"%02x ", block->data[i]);
+			for (k = 0; k < n; k++)
+				pos += snprintf(result + pos, size - pos,
+						"%02x ", block->data[i + k + 1]);
+			pos += snprintf(result + pos, size - pos,
+					"(%s%+ld) ", get_regname(block->data[i] - 0x70), sarg);
+			i += n;
+			break;
+		case 0x91:
+			sarg = read_sleb128(block->data + i + 1, &n);
+			pos += snprintf(result + pos, size - pos, "91 ");
+			for (k = 0; k < n; k++)
+				pos += snprintf(result + pos, size - pos,
+						"%02x ", block->data[i + k + 1]);
+			pos += snprintf(result + pos, size - pos,
+					"(fbreg%+ld) ", sarg);
+			i += n;
+			break;
+		case 0x96:
+			pos += snprintf(result + pos, size - pos,
+					"96 (nop) ");
+			break;
+		case 0x9c:
+			pos += snprintf(result + pos, size - pos,
+					"9c (cfa) ");
+			break;
+		default:
+			pos += snprintf(result + pos, size - pos,
+					"%02x ", block->data[i]);
+			break;
+		}
+	}
+
+	return result;
+}
+
 static char *print_file_name(Dwarf_Die *die, int idx)
 {
 	Dwarf_Files *files;
@@ -462,7 +592,10 @@ static int attr_callback(Dwarf_Attribute *attr, void *_arg)
 	case DW_FORM_exprloc:
 		dwarf_formblock(attr, &block);
 		raw_value = block.length;
-		val_str = print_block(&block);
+		if (form == DW_FORM_exprloc)
+			val_str = print_exprloc(&block);
+		else
+			val_str = print_block(&block);
 		break;
 	case DW_FORM_addr:
 		dwarf_formaddr(attr, &addr);
