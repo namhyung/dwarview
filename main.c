@@ -1209,16 +1209,54 @@ static void add_contents(GtkBuilder *builder, char *filename)
 	g_idle_add((GSourceFunc)add_die_content, arg);
 }
 
+static int try_add_builder(GtkBuilder *builder)
+{
+	char buf[4096];
+	const char * sysdir_list[] = {
+		"/usr/local/share",
+		"/usr/share",
+	};
+	const char filename[] = "dwarview.glade";
+	size_t sz = sizeof(buf);
+	unsigned i;
+
+	/* check current directory for local development */
+	if (gtk_builder_add_from_file(builder, filename, NULL) > 0)
+		return 0;
+
+	if (getenv("XDG_DATA_HOME")) {
+		snprintf(buf, sz, "%s/dwarview/%s", getenv("XDG_DATA_HOME"), filename);
+
+		if (gtk_builder_add_from_file(builder, buf, NULL) > 0)
+			return 0;
+	}
+
+	if (getenv("HOME")) {
+		snprintf(buf, sz, "%s/.local/share/dwarview/%s", getenv("HOME"), filename);
+
+		if (gtk_builder_add_from_file(builder, buf, NULL) > 0)
+			return 0;
+	}
+
+	for (i = 0; i < ARRAY_SIZE(sysdir_list); i++) {
+		snprintf(buf, sz, "%s/dwarview/%s", sysdir_list[i], filename);
+
+		if (gtk_builder_add_from_file(builder, buf, NULL) > 0)
+			return 0;
+	}
+
+	return -1;
+}
+
 int main(int argc, char *argv[])
 {
 	GtkWidget  *window;
-	GError *error;
 
 	gtk_init_check(&argc, &argv);
 
 	builder = gtk_builder_new();
-	if (gtk_builder_add_from_file(builder, "dwarview.glade", &error) == 0) {
-		g_error("%s", error->message);
+	if (try_add_builder(builder) < 0) {
+		printf("failed to find UI description\n");
 		return 1;
 	}
 
