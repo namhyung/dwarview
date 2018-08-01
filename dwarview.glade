@@ -301,6 +301,7 @@ Author: Namhyung Kim <namhyung@gmail.com>
                             <property name="can_focus">True</property>
                             <property name="model">attr_store</property>
                             <property name="rules_hint">True</property>
+                            <signal name="button-press-event" handler="on-attr-press" object="main_view" swapped="no"/>
                             <child internal-child="selection">
                               <object class="GtkTreeSelection"/>
                             </child>

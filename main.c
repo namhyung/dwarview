@@ -90,6 +90,8 @@ struct search_item {
 	GtkTreePath *path;
 };
 
+static GHashTable *die_map;
+
 static void add_contents(GtkBuilder *builder, char *filename);
 static void destroy_item(gpointer data);
 
@@ -154,6 +156,9 @@ static void close_dwarf_file(void)
 	g_list_free_full(var_list, destroy_item);
 	func_list = NULL;
 	var_list = NULL;
+
+	g_hash_table_destroy(die_map);
+	die_map = NULL;
 
 	/* stop and re-enable search */
 	search->on_going = FALSE;
@@ -958,6 +963,62 @@ static void on_file_close(GtkMenuItem *menu, gpointer *unused)
 	dwarf = NULL;
 }
 
+static gboolean on_attr_press(GtkWidget *widget, GdkEvent *event, gpointer data)
+{
+	GtkTreeView *view = GTK_TREE_VIEW(widget);
+	GtkTreePath *path = NULL;
+	GtkTreeModel *model = gtk_tree_view_get_model(view);
+	GtkTreeView *main_view = data;
+	GtkTreeIter iter;
+	GValue val = G_VALUE_INIT;
+	const char *type;
+	unsigned long off;
+	bool ref = FALSE;
+	bool expanded;
+
+	/* double-click to follow reference (jump to offset) */
+	if (event->button.type != GDK_2BUTTON_PRESS)
+		return FALSE;
+
+	gtk_tree_view_get_cursor(view, &path, NULL);
+	if (path == NULL)
+		return FALSE;
+
+	gtk_tree_model_get_iter(model, &iter, path);
+
+	gtk_tree_model_get_value(model, &iter, 1, &val);
+	type = g_value_get_string(&val);
+	if (!strncmp(type, "ref", 3))
+		ref = TRUE;
+	g_value_unset(&val);
+
+	if (!ref)
+		return FALSE;
+
+	gtk_tree_model_get_value(model, &iter, 2, &val);
+	off = g_value_get_ulong(&val);
+	g_value_unset(&val);
+
+	gtk_tree_path_free(path);
+
+	path = g_hash_table_lookup(die_map, (void *)off);
+	if (path == NULL)
+		return FALSE;
+
+	expanded = gtk_tree_view_row_expanded(main_view, path);
+
+	gtk_tree_view_expand_to_path(main_view, path);
+	gtk_tree_view_scroll_to_cell(main_view, path, NULL, TRUE, 0.5, 0);  /* center align */
+	gtk_tree_view_set_cursor(main_view, path, NULL, FALSE);
+	gtk_tree_view_row_activated(main_view, path, NULL);
+
+	/* do not change 'expanded' status */
+	if (!expanded)
+		gtk_tree_view_collapse_row(main_view, path);
+
+	return TRUE;
+}
+
 static void add_gtk_callbacks(GtkBuilder *builder)
 {
 	gtk_builder_add_callback_symbol(builder, "on-file-open",
@@ -972,6 +1033,8 @@ static void add_gtk_callbacks(GtkBuilder *builder)
 					G_CALLBACK(on_search_activated));
 	gtk_builder_add_callback_symbol(builder, "on-search-result",
 					G_CALLBACK(on_search_result));
+	gtk_builder_add_callback_symbol(builder, "on-attr-press",
+					G_CALLBACK(on_attr_press));
 
 	setup_search_status(builder);
 }
@@ -1011,6 +1074,7 @@ out:
 static void walk_die(Dwarf_Die *die, GtkTreeStore *store, GtkTreeIter *parent, int level)
 {
 	GtkTreeIter iter;
+	GtkTreePath *path;
 	Dwarf_Die next;
 	int tag = dwarf_tag(die);
 	const gchar *name = die_name(die);
@@ -1034,6 +1098,9 @@ static void walk_die(Dwarf_Die *die, GtkTreeStore *store, GtkTreeIter *parent, i
 			   2, name, -1);
 	g_free(markup);
 
+	path = gtk_tree_model_get_path(GTK_TREE_MODEL(store), &iter);
+	g_hash_table_insert(die_map, (void *)dwarf_dieoffset(die), path);
+
 	/* currently function and variable type can be searched */
 	switch (tag) {
 	case DW_TAG_subprogram:
@@ -1044,7 +1111,7 @@ static void walk_die(Dwarf_Die *die, GtkTreeStore *store, GtkTreeIter *parent, i
 			bool is_first = (func_list == NULL);
 
 			item->name = g_strdup(name);
-			item->path = gtk_tree_model_get_path(GTK_TREE_MODEL(store), &iter);
+			item->path = path;
 			func_list = g_list_prepend(func_list, item);
 
 			if (is_first)
@@ -1058,7 +1125,7 @@ static void walk_die(Dwarf_Die *die, GtkTreeStore *store, GtkTreeIter *parent, i
 			bool is_first = (var_list == NULL);
 
 			item->name = g_strdup(name);
-			item->path = gtk_tree_model_get_path(GTK_TREE_MODEL(store), &iter);
+			item->path = path;
 			var_list = g_list_prepend(var_list, item);
 
 			if (is_first)
@@ -1125,6 +1192,9 @@ static guint add_die_content(void *_arg)
 	gtk_tree_store_set(main_store, &iter, 0, buf,
 			   1, dwarview_tag_name(dwarf_tag(&die)),
 			   2, dwarf_diename(&die), -1);
+
+	g_hash_table_insert(die_map, (void *)(off + sz),
+			    gtk_tree_model_get_path(GTK_TREE_MODEL(main_store), &iter));
 
 	gtk_tree_store_append(main_store, &func, &iter);
 	gtk_tree_store_set(main_store, &func, 0, "", 1, "meta", 2, "functions", -1);
@@ -1210,6 +1280,8 @@ static void add_contents(GtkBuilder *builder, char *filename)
 
 	g_snprintf(arg->msgbuf, sizeof(arg->msgbuf), "Opening %s ...", filename);
 	gtk_statusbar_push(arg->status, arg->status_ctx, arg->msgbuf);
+
+	die_map = g_hash_table_new(g_direct_hash, g_direct_equal);
 
 	data = get_elf_secdata(dwarf_getelf(dwarf), ".debug_info");
 	if (data)
