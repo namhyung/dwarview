@@ -615,10 +615,16 @@ static int attr_callback(Dwarf_Attribute *attr, void *_arg)
 
 		dwarf_formref_die(attr, &die);
 
-		if (name == DW_AT_type)
-			val_str = type_name(&die);
-		else if (dwarf_diename(&die))
-			val_str = g_strdup(dwarf_diename(&die));
+		if (name == DW_AT_type) {
+			char *type = type_name(&die);
+
+			val_str = g_strdup_printf("%#lx (%s)", raw_value, type);
+			free(type);
+		}
+		else if (dwarf_diename(&die)) {
+			val_str = g_strdup_printf("%#lx (%s)", raw_value,
+						  dwarf_diename(&die));
+		}
 		else
 			val_str = g_strdup_printf("%#lx", raw_value);
 		break;
@@ -647,10 +653,11 @@ static void on_row_activated(GtkTreeView *view, GtkTreePath *path,
 		.diep = &die,
 		.store = GTK_TREE_STORE(attr_model),
 	};
+	char buf[32];
 
 	gtk_tree_model_get_iter(main_model, &iter, path);
 	gtk_tree_model_get_value(main_model, &iter, 0, &val);
-	off = g_value_get_ulong(&val);
+	off = strtoul(g_value_get_string(&val), NULL, 0);
 	g_value_unset(&val);
 
 	if (dwarf_offdie(dwarf, off, &die) == NULL) {
@@ -705,7 +712,7 @@ static int do_search(struct search_status *search, struct search_item *item)
 
 	gtk_tree_model_get_iter(main_model, &main_iter, item->path);
 	gtk_tree_model_get_value(main_model, &main_iter, 0, &val);
-	off = g_value_get_ulong(&val);
+	off = strtoul(g_value_get_string(&val), NULL, 0);
 	g_value_unset(&val);
 
 	if (dwarf_offdie(dwarf, off, &die) == NULL)
@@ -1008,6 +1015,7 @@ static void walk_die(Dwarf_Die *die, GtkTreeStore *store, GtkTreeIter *parent, i
 	int tag = dwarf_tag(die);
 	const gchar *name = die_name(die);
 	gchar *markup = NULL;
+	char buf[32];
 
 	if (dwarf_hasattr(die, DW_AT_declaration) || tag == DW_TAG_imported_declaration) {
 		const char *decl = "(decl)";
@@ -1019,8 +1027,9 @@ static void walk_die(Dwarf_Die *die, GtkTreeStore *store, GtkTreeIter *parent, i
 					 dwarview_tag_name(tag), decl, -1);
 	}
 
+	snprintf(buf, sizeof(buf), "%#lx", dwarf_dieoffset(die));
 	gtk_tree_store_append(store, &iter, parent);
-	gtk_tree_store_set(store, &iter, 0, dwarf_dieoffset(die),
+	gtk_tree_store_set(store, &iter, 0, buf,
 			   1, markup ?: dwarview_tag_name(tag),
 			   2, name, -1);
 	g_free(markup);
@@ -1095,6 +1104,7 @@ static guint add_die_content(void *_arg)
 	Dwarf_Off next;
 	Dwarf_Die die, child;
 	size_t sz;
+	char buf[32];
 
 	if (dwarf_nextcu(dwarf, off, &next, &sz, NULL, NULL, NULL)) {
 		gtk_statusbar_pop(arg->status, arg->status_ctx);
@@ -1110,19 +1120,20 @@ static guint add_die_content(void *_arg)
 		return FALSE;
 	}
 
+	snprintf(buf, sizeof(buf), "%#lx", off + sz);
 	gtk_tree_store_append(main_store, &iter, NULL);
-	gtk_tree_store_set(main_store, &iter, 0, off + sz,
+	gtk_tree_store_set(main_store, &iter, 0, buf,
 			   1, dwarview_tag_name(dwarf_tag(&die)),
 			   2, dwarf_diename(&die), -1);
 
 	gtk_tree_store_append(main_store, &func, &iter);
-	gtk_tree_store_set(main_store, &func, 0, -1, 1, "meta", 2, "functions", -1);
+	gtk_tree_store_set(main_store, &func, 0, "", 1, "meta", 2, "functions", -1);
 	gtk_tree_store_append(main_store, &vars, &iter);
-	gtk_tree_store_set(main_store, &vars, 0, -1, 1, "meta", 2, "variables", -1);
+	gtk_tree_store_set(main_store, &vars, 0, "", 1, "meta", 2, "variables", -1);
 	gtk_tree_store_append(main_store, &type, &iter);
-	gtk_tree_store_set(main_store, &type, 0, -1, 1, "meta", 2, "types", -1);
+	gtk_tree_store_set(main_store, &type, 0, "", 1, "meta", 2, "types", -1);
 	gtk_tree_store_append(main_store, &misc, &iter);
-	gtk_tree_store_set(main_store, &misc, 0, -1, 1, "meta", 2, "others", -1);
+	gtk_tree_store_set(main_store, &misc, 0, "", 1, "meta", 2, "others", -1);
 
 	arg->off = next;
 	if (dwarf_child(&die, &child) != 0)

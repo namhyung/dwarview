@@ -96,7 +96,7 @@ Author: Namhyung Kim <namhyung@gmail.com>
   <object class="GtkTreeStore" id="main_store">
     <columns>
       <!-- column-name offset -->
-      <column type="gulong"/>
+      <column type="gchararray"/>
       <!-- column-name tag -->
       <column type="gchararray"/>
       <!-- column-name name -->
@@ -249,7 +249,6 @@ Author: Namhyung Kim <namhyung@gmail.com>
                             </child>
                             <child>
                               <object class="GtkTreeViewColumn" id="die_offset">
-                                <property name="visible">False</property>
                                 <property name="title" translatable="yes">Offset</property>
                                 <child>
                                   <object class="GtkCellRendererText"/>
