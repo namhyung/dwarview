@@ -1048,6 +1048,26 @@ static const char *die_name(Dwarf_Die *die)
 	const char *name;
 	static char buf[4096];
 
+	switch (dwarf_tag(die)) {
+	case DW_TAG_structure_type:
+	case DW_TAG_union_type:
+	case DW_TAG_enumeration_type:
+	case DW_TAG_class_type:
+	case DW_TAG_interface_type:
+	case DW_TAG_subroutine_type:
+	case DW_TAG_const_type:
+	case DW_TAG_volatile_type:
+	case DW_TAG_restrict_type:
+	case DW_TAG_pointer_type:
+	case DW_TAG_ptr_to_member_type:
+	case DW_TAG_reference_type:
+	case DW_TAG_rvalue_reference_type:
+	case DW_TAG_array_type:
+		return type_name(die);
+	default:
+		break;
+	}
+
 	while (true) {
 		if (dwarf_attr(&pos, DW_AT_name, &attr))
 			return dwarf_formstring(&attr);
