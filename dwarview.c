@@ -89,9 +89,15 @@ static const struct tag_name tag_names[] = {
 	DWARF_TAG(type_unit),
 	DWARF_TAG(rvalue_reference_type),
 	DWARF_TAG(template_alias),
-
-	/* DWARF 5.  */
-	DWARF_TAG(atomic_type),
+	/* use raw numbers for compatibility */
+	{ 0x44, "coarray_type" },
+	{ 0x45, "generic_subrange" },
+	{ 0x46, "dynamic_type" },
+	{ 0x47, "atomic_type" },
+	{ 0x48, "call_site" },
+	{ 0x49, "call_site_parameter" },
+	{ 0x4a, "skeleton_unit" },
+	{ 0x4b, "immutable_type" },
 
 	DWARF_TAG(lo_user),
 
@@ -230,9 +236,37 @@ static const struct attr_name attr_names[] = {
 	DWARF_ATTR(const_expr),
 	DWARF_ATTR(enum_class),
 	DWARF_ATTR(linkage_name),
-
-	/* DWARF5 attribute values.  */
-	DWARF_ATTR(noreturn),
+	/* use raw numbers for compatibility */
+	{ 0x6f, "string_length_bit_size" },
+	{ 0x70, "string_length_byte_size" },
+	{ 0x71, "rank" },
+	{ 0x72, "str_offsets_base" },
+	{ 0x73, "addr_base" },
+	{ 0x74, "rnglists_base" },
+	/* 0x75 reserved.  */
+	{ 0x76, "dwo_name" },
+	{ 0x77, "reference" },
+	{ 0x78, "rvalue_reference" },
+	{ 0x79, "macros" },
+	{ 0x7a, "call_all_calls" },
+	{ 0x7b, "call_all_source_calls" },
+	{ 0x7c, "call_all_tail_calls" },
+	{ 0x7d, "call_return_pc" },
+	{ 0x7e, "call_value" },
+	{ 0x7f, "call_origin" },
+	{ 0x80, "call_parameter" },
+	{ 0x81, "call_pc" },
+	{ 0x82, "call_tail_call" },
+	{ 0x83, "call_target" },
+	{ 0x84, "call_target_clobbered" },
+	{ 0x85, "call_data_location" },
+	{ 0x86, "call_data_value" },
+	{ 0x87, "noreturn" },
+	{ 0x88, "alignment" },
+	{ 0x89, "export_symbols" },
+	{ 0x8a, "deleted" },
+	{ 0x8b, "defaulted" },
+	{ 0x8c, "loclists_base" },
 
 	DWARF_ATTR(lo_user),
 
@@ -281,6 +315,22 @@ static const struct attr_name attr_names[] = {
 	DWARF_ATTR(GNU_all_source_call_sites),
 	DWARF_ATTR(GNU_macros),
 	DWARF_ATTR(GNU_deleted),
+	{ 0x2137, "GNU_locviews" },
+	{ 0x2138, "GNU_entry_view" },
+
+	/* GNU Debug Fission extensions.  */
+	{ 0x2130, "GNU_dwo_name" },
+	{ 0x2131, "GNU_dwo_id" },
+	{ 0x2132, "GNU_ranges_base" },
+	{ 0x2133, "GNU_addr_base" },
+	{ 0x2134, "GNU_pubnames" },
+	{ 0x2135, "GNU_pubtypes" },
+
+	/* https://gcc.gnu.org/wiki/DW_AT_GNU_numerator_denominator  */
+	{ 0x2303, "GNU_numerator" },
+	{ 0x2304, "GNU_denominator" },
+	/* https://gcc.gnu.org/wiki/DW_AT_GNU_bias  */
+	{ 0x2305, "GNU_bias" },
 
 	DWARF_ATTR(hi_user),
 };
@@ -331,7 +381,30 @@ static const struct form_name form_names[] = {
 	DWARF_FORM(sec_offset),
 	DWARF_FORM(exprloc),
 	DWARF_FORM(flag_present),
-	DWARF_FORM(ref_sig8),
+
+	{ 0x1a, "strx" },
+	{ 0x1b, "addrx" },
+	{ 0x1c, "ref_sup4" },
+	{ 0x1d, "strp_sup" },
+	{ 0x1e, "data16" },
+	{ 0x1f, "line_strp" },
+	{ 0x20, "ref_sig8" },
+	{ 0x21, "implicit_const" },
+	{ 0x22, "loclistx" },
+	{ 0x23, "rnglistx" },
+	{ 0x24, "ref_sup8" },
+	{ 0x25, "strx1" },
+	{ 0x26, "strx2" },
+	{ 0x27, "strx3" },
+	{ 0x28, "strx4" },
+	{ 0x29, "addrx1" },
+	{ 0x2a, "addrx2" },
+	{ 0x2b, "addrx3" },
+	{ 0x2c, "addrx4" },
+
+	/* GNU Debug Fission extensions.  */
+	{ 0x1f01, "GNU_addr_index" },
+	{ 0x1f02, "GNU_str_index" },
 
 	DWARF_FORM(GNU_ref_alt),
 	DWARF_FORM(GNU_strp_alt),
@@ -412,8 +485,18 @@ static const struct lang_name language_names[] = {
 	DWARF_LANGUAGE(Go),
 	DWARF_LANGUAGE(Haskell),
 	DWARF_LANG_Cpp( , _11, "C++11"),
+	DWARF_LANGUAGE(OCaml),
+	DWARF_LANGUAGE(Rust),
 	DWARF_LANGUAGE(C11),
 	DWARF_LANG_Cpp( , _14, "C++14"),
+	{ 0x1e, "Swift" },
+	{ 0x1f, "Julia" },
+	{ 0x20, "Dylan" },
+	/* 0x21 is C++14 */
+	{ 0x22, "Fortran03" },
+	{ 0x23, "Fortran08" },
+	{ 0x24, "RenderScript" },
+	{ 0x25, "BLISS" },
 };
 
 char *dwarview_language_name(unsigned int code)
