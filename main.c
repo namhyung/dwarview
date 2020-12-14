@@ -644,8 +644,7 @@ static int attr_callback(Dwarf_Attribute *attr, void *_arg)
 	return DWARF_CB_OK;
 }
 
-static void on_row_activated(GtkTreeView *view, GtkTreePath *path,
-			     GtkTreeViewColumn *col, gpointer data)
+static void on_cursor_changed(GtkTreeView *view, gpointer data)
 {
 	GtkTreeView *attr_view = data;
 	GtkTreeModel *main_model = gtk_tree_view_get_model(view);
@@ -660,7 +659,8 @@ static void on_row_activated(GtkTreeView *view, GtkTreePath *path,
 	};
 	char buf[32];
 
-	gtk_tree_model_get_iter(main_model, &iter, path);
+	GtkTreeSelection *selection = gtk_tree_view_get_selection(view);
+	gtk_tree_selection_get_selected(selection, NULL, &iter);
 	gtk_tree_model_get_value(main_model, &iter, 0, &val);
 	off = strtoul(g_value_get_string(&val), NULL, 0);
 	g_value_unset(&val);
@@ -1025,8 +1025,8 @@ static void add_gtk_callbacks(GtkBuilder *builder)
 					G_CALLBACK(on_file_open));
 	gtk_builder_add_callback_symbol(builder, "on-file-close",
 					G_CALLBACK(on_file_close));
-	gtk_builder_add_callback_symbol(builder, "on-row-activated",
-					G_CALLBACK(on_row_activated));
+	gtk_builder_add_callback_symbol(builder, "on-cursor-changed",
+					G_CALLBACK(on_cursor_changed));
 	gtk_builder_add_callback_symbol(builder, "on-button-press",
 					G_CALLBACK(on_button_press));
 	gtk_builder_add_callback_symbol(builder, "on-search-activated",

@@ -246,7 +246,7 @@ Author: Namhyung Kim <namhyung@gmail.com>
                             <property name="search_column">2</property>
                             <property name="activate_on_single_click">True</property>
                             <signal name="button-press-event" handler="on-button-press" swapped="no"/>
-                            <signal name="row-activated" handler="on-row-activated" object="attr_view" swapped="no"/>
+                            <signal name="cursor-changed" handler="on-cursor-changed" object="attr_view" swapped="no"/>
                             <child internal-child="selection">
                               <object class="GtkTreeSelection"/>
                             </child>
