@@ -145,7 +145,11 @@ error:
 
 static void close_dwarf_file(void)
 {
+	if (dwarf == NULL)
+		return;
+
 	dwarf_end(dwarf);
+	dwarf = NULL;
 
 	gtk_tree_store_clear(arg->main_store);
 	gtk_tree_store_clear(arg->attr_store);
@@ -176,7 +180,6 @@ static void close_dwarf_file(void)
 	}
 
 	g_free(arg->filename);
-
 	g_free(arg);
 }
 
@@ -916,9 +919,6 @@ static void on_file_open(GtkMenuItem *menu, gpointer *window)
 	GtkFileChooserAction action = GTK_FILE_CHOOSER_ACTION_OPEN;
 	GtkFileChooser *chooser;
 
-	if (dwarf != NULL)
-		return;
-
 	dialog = gtk_file_chooser_dialog_new("Open File", GTK_WINDOW(window), action,
 					      "_Cancel", GTK_RESPONSE_CANCEL,
 					      "_Open", GTK_RESPONSE_ACCEPT,
@@ -934,6 +934,7 @@ static void on_file_open(GtkMenuItem *menu, gpointer *window)
 	filename = gtk_file_chooser_get_filename(chooser);
 	gtk_widget_destroy (dialog);
 
+	close_dwarf_file();
 	res = open_dwarf_file(filename);
 	if (res != 0)
 		show_warning(GTK_WIDGET(window), "Error: %s: %s\n",
@@ -944,11 +945,7 @@ static void on_file_open(GtkMenuItem *menu, gpointer *window)
 
 static void on_file_close(GtkMenuItem *menu, gpointer *unused)
 {
-	if (dwarf == NULL)
-		return;
-
 	close_dwarf_file();
-	dwarf = NULL;
 }
 
 static gboolean on_attr_press(GtkWidget *widget, GdkEvent *event, gpointer data)
