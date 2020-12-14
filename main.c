@@ -675,26 +675,14 @@ static void on_cursor_changed(GtkTreeView *view, gpointer data)
 	dwarf_getattrs(&die, attr_callback, &arg, 0);
 }
 
-static gboolean on_button_press(GtkWidget *widget, GdkEvent *event, gpointer data)
+static void on_row_activated(GtkTreeView *view, GtkTreePath *path,
+                             GtkTreeViewColumn *column, gpointer user_data)
 {
-	GtkTreeView *view = GTK_TREE_VIEW(widget);
-	GtkTreePath *path = NULL;
-	bool expanded;
-
-	/* double-click to toggle expand/collapse */
-	if (event->button.type != GDK_2BUTTON_PRESS)
-		return FALSE;
-
-	gtk_tree_view_get_cursor(view, &path, NULL);
-
-	expanded = gtk_tree_view_row_expanded(view, path);
+	bool expanded = gtk_tree_view_row_expanded(view, path);
 	if (expanded)
 		gtk_tree_view_collapse_row(view, path);
 	else
 		gtk_tree_view_expand_row(view, path, FALSE);
-
-	gtk_tree_path_free(path);
-	return TRUE;
 }
 
 #define MAX_SEARCH_COUNT  1000
@@ -1027,8 +1015,8 @@ static void add_gtk_callbacks(GtkBuilder *builder)
 					G_CALLBACK(on_file_close));
 	gtk_builder_add_callback_symbol(builder, "on-cursor-changed",
 					G_CALLBACK(on_cursor_changed));
-	gtk_builder_add_callback_symbol(builder, "on-button-press",
-					G_CALLBACK(on_button_press));
+	gtk_builder_add_callback_symbol(builder, "on-row-activated",
+					G_CALLBACK(on_row_activated));
 	gtk_builder_add_callback_symbol(builder, "on-search-activated",
 					G_CALLBACK(on_search_activated));
 	gtk_builder_add_callback_symbol(builder, "on-search-result",
