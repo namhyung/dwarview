@@ -580,7 +580,7 @@ static int attr_callback(Dwarf_Attribute *attr, void *_arg)
 		if (name == DW_AT_decl_file || name == DW_AT_call_file)
 			val_str = print_file_name(arg->diep, raw_value);
 		else if (name == DW_AT_decl_line || name == DW_AT_call_line)
-			val_str = g_strdup_printf("Line %u", raw_value);
+			val_str = g_strdup_printf("Line %lu", raw_value);
 		else if (name == DW_AT_inline)
 			val_str = g_strdup(dwarview_inline_name(raw_value));
 		else if (name == DW_AT_ranges)
@@ -588,7 +588,7 @@ static int attr_callback(Dwarf_Attribute *attr, void *_arg)
 		else if (name == DW_AT_language)
 			val_str = g_strdup(dwarview_language_name(raw_value));
 		else
-			val_str = g_strdup_printf("%#x", raw_value);
+			val_str = g_strdup_printf("%#lx", raw_value);
 		break;
 	case DW_FORM_block1:
 	case DW_FORM_block2:
@@ -605,7 +605,7 @@ static int attr_callback(Dwarf_Attribute *attr, void *_arg)
 	case DW_FORM_addr:
 		dwarf_formaddr(attr, &addr);
 		raw_value = addr;
-		val_str = g_strdup_printf("%#x", raw_value);
+		val_str = g_strdup_printf("%#lx", raw_value);
 		break;
 	case DW_FORM_ref1:
 	case DW_FORM_ref2:
