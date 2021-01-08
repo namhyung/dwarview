@@ -145,7 +145,11 @@ error:
 
 static void close_dwarf_file(void)
 {
+	if (dwarf == NULL)
+		return;
+
 	dwarf_end(dwarf);
+	dwarf = NULL;
 
 	gtk_tree_store_clear(arg->main_store);
 	gtk_tree_store_clear(arg->attr_store);
@@ -176,7 +180,6 @@ static void close_dwarf_file(void)
 	}
 
 	g_free(arg->filename);
-
 	g_free(arg);
 }
 
@@ -580,7 +583,7 @@ static int attr_callback(Dwarf_Attribute *attr, void *_arg)
 		if (name == DW_AT_decl_file || name == DW_AT_call_file)
 			val_str = print_file_name(arg->diep, raw_value);
 		else if (name == DW_AT_decl_line || name == DW_AT_call_line)
-			val_str = g_strdup_printf("Line %u", raw_value);
+			val_str = g_strdup_printf("Line %lu", raw_value);
 		else if (name == DW_AT_inline)
 			val_str = g_strdup(dwarview_inline_name(raw_value));
 		else if (name == DW_AT_ranges)
@@ -588,7 +591,7 @@ static int attr_callback(Dwarf_Attribute *attr, void *_arg)
 		else if (name == DW_AT_language)
 			val_str = g_strdup(dwarview_language_name(raw_value));
 		else
-			val_str = g_strdup_printf("%#x", raw_value);
+			val_str = g_strdup_printf("%#lx", raw_value);
 		break;
 	case DW_FORM_block1:
 	case DW_FORM_block2:
@@ -605,7 +608,7 @@ static int attr_callback(Dwarf_Attribute *attr, void *_arg)
 	case DW_FORM_addr:
 		dwarf_formaddr(attr, &addr);
 		raw_value = addr;
-		val_str = g_strdup_printf("%#x", raw_value);
+		val_str = g_strdup_printf("%#lx", raw_value);
 		break;
 	case DW_FORM_ref1:
 	case DW_FORM_ref2:
@@ -644,8 +647,7 @@ static int attr_callback(Dwarf_Attribute *attr, void *_arg)
 	return DWARF_CB_OK;
 }
 
-static void on_row_activated(GtkTreeView *view, GtkTreePath *path,
-			     GtkTreeViewColumn *col, gpointer data)
+static void on_cursor_changed(GtkTreeView *view, gpointer data)
 {
 	GtkTreeView *attr_view = data;
 	GtkTreeModel *main_model = gtk_tree_view_get_model(view);
@@ -660,7 +662,8 @@ static void on_row_activated(GtkTreeView *view, GtkTreePath *path,
 	};
 	char buf[32];
 
-	gtk_tree_model_get_iter(main_model, &iter, path);
+	GtkTreeSelection *selection = gtk_tree_view_get_selection(view);
+	gtk_tree_selection_get_selected(selection, NULL, &iter);
 	gtk_tree_model_get_value(main_model, &iter, 0, &val);
 	off = strtoul(g_value_get_string(&val), NULL, 0);
 	g_value_unset(&val);
@@ -675,26 +678,14 @@ static void on_row_activated(GtkTreeView *view, GtkTreePath *path,
 	dwarf_getattrs(&die, attr_callback, &arg, 0);
 }
 
-static gboolean on_button_press(GtkWidget *widget, GdkEvent *event, gpointer data)
+static void on_row_activated(GtkTreeView *view, GtkTreePath *path,
+                             GtkTreeViewColumn *column, gpointer user_data)
 {
-	GtkTreeView *view = GTK_TREE_VIEW(widget);
-	GtkTreePath *path = NULL;
-	bool expanded;
-
-	/* double-click to toggle expand/collapse */
-	if (event->button.type != GDK_2BUTTON_PRESS)
-		return FALSE;
-
-	gtk_tree_view_get_cursor(view, &path, NULL);
-
-	expanded = gtk_tree_view_row_expanded(view, path);
+	bool expanded = gtk_tree_view_row_expanded(view, path);
 	if (expanded)
 		gtk_tree_view_collapse_row(view, path);
 	else
 		gtk_tree_view_expand_row(view, path, FALSE);
-
-	gtk_tree_path_free(path);
-	return TRUE;
 }
 
 #define MAX_SEARCH_COUNT  1000
@@ -928,9 +919,6 @@ static void on_file_open(GtkMenuItem *menu, gpointer *window)
 	GtkFileChooserAction action = GTK_FILE_CHOOSER_ACTION_OPEN;
 	GtkFileChooser *chooser;
 
-	if (dwarf != NULL)
-		return;
-
 	dialog = gtk_file_chooser_dialog_new("Open File", GTK_WINDOW(window), action,
 					      "_Cancel", GTK_RESPONSE_CANCEL,
 					      "_Open", GTK_RESPONSE_ACCEPT,
@@ -946,6 +934,7 @@ static void on_file_open(GtkMenuItem *menu, gpointer *window)
 	filename = gtk_file_chooser_get_filename(chooser);
 	gtk_widget_destroy (dialog);
 
+	close_dwarf_file();
 	res = open_dwarf_file(filename);
 	if (res != 0)
 		show_warning(GTK_WIDGET(window), "Error: %s: %s\n",
@@ -956,11 +945,7 @@ static void on_file_open(GtkMenuItem *menu, gpointer *window)
 
 static void on_file_close(GtkMenuItem *menu, gpointer *unused)
 {
-	if (dwarf == NULL)
-		return;
-
 	close_dwarf_file();
-	dwarf = NULL;
 }
 
 static gboolean on_attr_press(GtkWidget *widget, GdkEvent *event, gpointer data)
@@ -1025,10 +1010,10 @@ static void add_gtk_callbacks(GtkBuilder *builder)
 					G_CALLBACK(on_file_open));
 	gtk_builder_add_callback_symbol(builder, "on-file-close",
 					G_CALLBACK(on_file_close));
+	gtk_builder_add_callback_symbol(builder, "on-cursor-changed",
+					G_CALLBACK(on_cursor_changed));
 	gtk_builder_add_callback_symbol(builder, "on-row-activated",
 					G_CALLBACK(on_row_activated));
-	gtk_builder_add_callback_symbol(builder, "on-button-press",
-					G_CALLBACK(on_button_press));
 	gtk_builder_add_callback_symbol(builder, "on-search-activated",
 					G_CALLBACK(on_search_activated));
 	gtk_builder_add_callback_symbol(builder, "on-search-result",
