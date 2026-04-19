@@ -1303,7 +1303,9 @@ static int try_add_builder(GtkBuilder *builder)
 	const char * sysdir_list[] = {
 		"/usr/local/share",
 		"/usr/share",
+		"/app/share",
 	};
+	const char *dirname;
 	const char filename[] = "dwarview.glade";
 	size_t sz = sizeof(buf);
 	unsigned i;
@@ -1312,22 +1314,27 @@ static int try_add_builder(GtkBuilder *builder)
 	if (gtk_builder_add_from_file(builder, filename, NULL) > 0)
 		return 0;
 
-	if (getenv("XDG_DATA_HOME")) {
-		snprintf(buf, sz, "%s/dwarview/%s", getenv("XDG_DATA_HOME"), filename);
+	/* try XDG data directory */
+	dirname = g_get_user_data_dir();
+	if (dirname) {
+		snprintf(buf, sz, "%s/%s", dirname, filename);
 
 		if (gtk_builder_add_from_file(builder, buf, NULL) > 0)
 			return 0;
 	}
 
-	if (getenv("HOME")) {
-		snprintf(buf, sz, "%s/.local/share/dwarview/%s", getenv("HOME"), filename);
+	/* then try the home directory */
+	dirname = getenv("HOME");
+	if (dirname) {
+		snprintf(buf, sz, "%s/.local/share/%s", dirname, filename);
 
 		if (gtk_builder_add_from_file(builder, buf, NULL) > 0)
 			return 0;
 	}
 
+	/* finally try system directories */
 	for (i = 0; i < ARRAY_SIZE(sysdir_list); i++) {
-		snprintf(buf, sz, "%s/dwarview/%s", sysdir_list[i], filename);
+		snprintf(buf, sz, "%s/%s", sysdir_list[i], filename);
 
 		if (gtk_builder_add_from_file(builder, buf, NULL) > 0)
 			return 0;
