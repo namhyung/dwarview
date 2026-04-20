@@ -2,7 +2,7 @@
 <!-- Generated with glade 3.22.2 
 
 dwarview - DWARF debug info viewer
-Copyright (C) 2016-2017  Namhyung Kim
+Copyright (C) 2016-2026  Namhyung Kim
 
 This program is free software; you can redistribute it and/or
 modify it under the terms of the GNU General Public License
@@ -26,7 +26,7 @@ Author: Namhyung Kim <namhyung@gmail.com>
   <!-- interface-license-type gplv2 -->
   <!-- interface-name dwarview -->
   <!-- interface-description DWARF debug info viewer -->
-  <!-- interface-copyright 2016-2017  Namhyung Kim -->
+  <!-- interface-copyright 2016-2026  Namhyung Kim -->
   <!-- interface-authors Namhyung Kim <namhyung@gmail.com> -->
   <object class="GtkAboutDialog" id="about">
     <property name="can_focus">False</property>
@@ -35,11 +35,11 @@ Author: Namhyung Kim <namhyung@gmail.com>
     <property name="type_hint">dialog</property>
     <property name="program_name">dwarview</property>
     <property name="version">v0.1</property>
-    <property name="copyright" translatable="yes">Copyright (C) 2016  Namhynng Kim &lt;namhyung@gmail.com&gt;</property>
+    <property name="copyright" translatable="yes">Copyright (C) 2016-2026  Namhynng Kim &lt;namhyung@gmail.com&gt;</property>
     <property name="website">https://github.com/namhyung/dwarview</property>
-    <property name="website_label" translatable="yes">github dwarview page</property>
+    <property name="website_label" translatable="yes">github page</property>
     <property name="authors">Namhyung Kim</property>
-    <property name="logo_icon_name">image-missing</property>
+    <property name="logo_icon_name">io.github.namhyung.dwarview</property>
     <property name="license_type">gpl-2-0</property>
     <child type="titlebar">
       <placeholder/>

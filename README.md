@@ -8,4 +8,4 @@ It's written in C using GTK+3 and libdw library from elfutils.
 
 Screenshot
 ==========
-![screentshot of dwarview](doc/dwarview-screenshot.png)
+![screentshot of dwarview](appdata/dwarview-screenshot.png)

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+
+Name=dwarview
+Comment=DWARF debug information viewer
+Categories=Development;Debugger;
+
+Icon=io.github.namhyung.dwarview
+Exec=dwarview
+Terminal=false

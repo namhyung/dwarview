@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.namhyung.dwarview</id>
+
+  <name>dwarview</name>
+  <summary>DWARF debug information viewer</summary>
+  <url type="homepage">https://github.com/namhyung/dwarview</url>
+  <developer id="io.github.namhyung">
+    <name>Namhyung Kim</name>
+  </developer>
+
+  <metadata_license>FSFAP</metadata_license>
+  <project_license>GPL-2.0-or-later</project_license>
+
+  <description>
+    <p>
+      The dwarview is a GUI program that displays DWARF debug info in a binary file as a tree.
+      It also supports to search functions and variables by name (with glob pattern).
+      It&apos;s written in C using GTK+3 and libdw library from elfutils.
+    </p>
+  </description>
+  <keywords>
+    <keyword>development</keyword>
+    <keyword>dwarf</keyword>
+    <keyword>debuginfo</keyword>
+  </keywords>
+
+  <provides>
+    <binary>dwarview</binary>
+  </provides>
+  <launchable type="desktop-id">io.github.namhyung.dwarview.desktop</launchable>
+  <screenshots>
+    <screenshot type="default">
+      <image>https://raw.githubusercontent.com/namhyung/dwarview/refs/heads/master/appdata/dwarview-screenshot.png</image>
+    </screenshot>
+  </screenshots>
+</component>
