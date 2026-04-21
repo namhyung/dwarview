@@ -15,7 +15,7 @@ install: dwarview
 	install -Dm755 dwarview $(PREFIX)/bin/dwarview
 	install -Dm644 dwarview.glade $(PREFIX)/share/dwarview.glade
 	install -Dm644 appdata/dwarview-logo.png $(PREFIX)/share/icons/hicolor/128x128/apps/$(ID).png
-	install -Dm644 appdata/metainfo.xml $(PREFIX)/share/metadata/$(ID).metainfo.xml
+	install -Dm644 appdata/metainfo.xml $(PREFIX)/share/metainfo/$(ID).metainfo.xml
 	install -Dm644 appdata/desktop-entry $(PREFIX)/share/applications/$(ID).desktop
 
 clean:

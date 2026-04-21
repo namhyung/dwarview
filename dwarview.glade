@@ -34,7 +34,7 @@ Author: Namhyung Kim <namhyung@gmail.com>
     <property name="window_position">center-on-parent</property>
     <property name="type_hint">dialog</property>
     <property name="program_name">dwarview</property>
-    <property name="version">v0.1.1</property>
+    <property name="version">v0.1.2</property>
     <property name="copyright" translatable="yes">Copyright (C) 2016-2026  Namhynng Kim &lt;namhyung@gmail.com&gt;</property>
     <property name="website">https://github.com/namhyung/dwarview</property>
     <property name="website_label" translatable="yes">github page</property>
