@@ -5,12 +5,17 @@
   <name>dwarview</name>
   <summary>DWARF debug information viewer</summary>
   <url type="homepage">https://github.com/namhyung/dwarview</url>
+  <url type="bugtracker">https://github.com/namhyung/dwarview/issues</url>
   <developer id="io.github.namhyung">
     <name>Namhyung Kim</name>
   </developer>
 
   <metadata_license>FSFAP</metadata_license>
   <project_license>GPL-2.0-or-later</project_license>
+  <branding>
+    <color type="primary" scheme_preference="light">#8ff495</color>
+    <color type="primary" scheme_preference="dark">#3b2060</color>
+  </branding>
 
   <description>
     <p>
@@ -24,6 +29,15 @@
     <keyword>dwarf</keyword>
     <keyword>debuginfo</keyword>
   </keywords>
+  <content_rating type="oars-1.1" />
+
+  <releases>
+    <release version="0.1" date="2026-04-19">
+      <description>
+	<p>Initial release</p>
+      </description>
+    </release>
+  </releases>
 
   <provides>
     <binary>dwarview</binary>
